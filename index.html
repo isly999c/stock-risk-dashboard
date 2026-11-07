@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>華爾街量化風控官 × 台股籌碼操盤手系統 (Pro)</title>
+  <title>華爾街量化風控官 × 台股籌碼操盤手系統 (v3.0 全自動營收財報新聞版)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React 18 & ReactDOM -->
@@ -25,8 +25,15 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect } = React;
 
-    // 內建台股與熱門 ETF 名稱快取字典 (含 009816 等常見標的，並支援 API 動態擴充)
+    // 內建精確台股與熱門 ETF 名稱字典 (已修正 009816 凱基台灣TOP50 等最新 ETF)
     const BUILTIN_STOCK_DIR = {
+      "009816": "凱基台灣TOP50",
+      "0050": "元大台灣50", "0056": "元大高股息", "00878": "國泰永續高股息",
+      "00919": "群益台灣精選高息", "00929": "復華台灣科技優息", "00940": "元大台灣價值高息",
+      "00939": "統一台灣高息動能", "006208": "富邦台50", "00679B": "元大美債20年",
+      "00687B": "國泰20年美債", "00713": "元大台灣高息低波", "00881": "國泰台灣5G+",
+      "009802": "富邦旗艦50", "009803": "保德信市值動能50", "00631L": "元大台灣50正2",
+      "00685L": "群益臺灣加權正2", "00915": "凱基優選高股息30", "00918": "大華優利高填息30",
       "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "3017": "奇鋐",
       "2382": "廣達", "3231": "緯創", "2603": "長榮", "2609": "陽明",
       "2615": "萬海", "2308": "台達電", "2881": "富邦金", "2882": "國泰金",
@@ -38,15 +45,29 @@
       "3356": "奇偶", "5443": "均豪", "2327": "國巨", "2368": "金像電",
       "6274": "台燿", "2383": "台光電", "3037": "欣興", "8046": "南電",
       "3189": "景碩", "1513": "中興電", "1519": "華城", "1503": "士電",
-      "1504": "東元", "1609": "大亞", "2002": "中鋼", "1101": "台泥",
-      "0050": "元大台灣50", "0056": "元大高股息", "00878": "國泰永續高股息",
-      "00919": "群益台灣精選高息", "00929": "復華台灣科技優息", "00940": "元大台灣價值高息",
-      "00939": "統一台灣高息動能", "006208": "富邦台50", "00679B": "元大美債20年",
-      "00687B": "國泰20年美債", "00713": "元大台灣高息低波", "00881": "國泰台灣5G+",
-      "009816": "台股精選ETF(009816)", "009802": "富邦旗艦50", "009803": "保德信市值動能50"
+      "1504": "東元", "1609": "大亞", "2002": "中鋼", "1101": "台泥"
     };
 
-    // 第二版初始預設範本庫存
+    // ETF 專屬基本面資料庫 (因 ETF 無月營收與季 EPS，自動帶入指數選股邏輯與規模特徵)
+    const ETF_FUNDAMENTAL_DB = {
+      "009816": {
+        revText: "ETF 追蹤「特選臺灣TOP 50指數」(不適用公司月營收)",
+        epsText: "不配息設計（現金股利自動再投入淨值複利滾存）",
+        peText: "經理費僅 0.07%｜聚焦台股市值前50大且近四季獲利為正之龍頭股，具動能加碼機制"
+      },
+      "0050": {
+        revText: "ETF 追蹤「臺灣50指數」",
+        epsText: "半年配息（每年 1、7 月除息）",
+        peText: "台股最具代表性市值型 ETF，涵蓋台股市值前 50 大上市公司"
+      },
+      "00878": {
+        revText: "ETF 追蹤「MSCI臺灣ESG永續高股息精選30指數」",
+        epsText: "季配息機制",
+        peText: "結合 ESG 篩選與近三年穩定高殖利率之大型價值股"
+      }
+    };
+
+    // 預設示範庫存 (含 2330 台積電、3017 奇鋐、009816 凱基台灣TOP50)
     const INITIAL_STOCKS = [
       {
         id: "2330",
@@ -60,9 +81,13 @@
         ma5: 1060.0,
         ma10: 1045.0,
         ma20: 1025.0,
-        mode: "swing", // 'swing': 波段 | 'short': 短線
+        ma60: 990.0,
+        mode: "swing",
+        stopLossPct: 8.0,      // 自訂資金停損%數 (預設波段 8%)
+        stopMaType: "ma20",    // 'ma10' | 'ma20' | 'ma60' | 'none'
+        maBreakBufferPct: 3.0, // 跌破均線容忍度 (預設 3%)
         lastSyncedAt: "預設載入",
-        syncSource: "TWSE盤後資料庫 + FinMind K線",
+        syncSource: "TWSE盤後資料庫 + FinMind財報引擎",
         twoDaysBelowMA: false,
         longBlackBreakMA5: false,
         maBullishAlign: true,
@@ -72,13 +97,18 @@
         chipForeignTrustBuy: true,
         chipMarginDownShortUp: true,
         chipNoDayTrader: true,
-        missingBranchData: true,
+        missingBranchData: false,
         fundRevGrowthTheme: true,
         sectorHotFocus: true,
-        institutionalNote: "外資+12,450張 (連3買) / 投信+1,230張 (連5買)，土洋同步作多。",
-        marginNote: "融資-1,820張、融券+320張，借券賣出餘額減少4,100張 (散戶退場、空方回補)。",
-        branchNote: "",
-        fundamentalNote: "先進製程與CoWoS產能滿載，AI晶片需求強勁，最高曾獲利+11.73%，防守底線已上移至20MA(1025.0元)。"
+        institutionalNote: "外資 +12,450張 (連3買) / 投信 +1,230張 (連5買) / 自營商 +310張，土洋法人同步買超鎖碼。",
+        marginNote: "融資 -1,820張、融券 +320張，散戶浮額減少、籌碼流向大戶。",
+        branchNote: "🤖 系統籌碼推算：外資與投信大額買超主導盤勢，主力買盤集中度高，無明顯隔日沖亂場跡象。",
+        revenueNote: "最新單月營收年增 (YoY) +34.2%、月增 (MoM) +6.8%，續創歷年同期新高。",
+        epsNote: "最新單季 EPS 12.54 元｜本益比 (PE) 約 22.4 倍｜殖利率約 1.6%",
+        fundamentalNote: "CoWoS 先進封裝與 2奈米需求強勁，AI 伺服器晶片訂單滿載。",
+        newsItems: [
+          { title: "台積電先進製程產能滿載 法人上修明年資本支出與獲利展望", pubDate: "近期焦點", link: "https://news.google.com/search?q=2330+台積電&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" }
+        ]
       },
       {
         id: "3017",
@@ -92,9 +122,13 @@
         ma5: 610.0,
         ma10: 625.0,
         ma20: 620.0,
+        ma60: 605.0,
         mode: "swing",
+        stopLossPct: 8.0,
+        stopMaType: "ma20",
+        maBreakBufferPct: 3.0,
         lastSyncedAt: "預設載入",
-        syncSource: "TWSE盤後資料庫 + FinMind K線",
+        syncSource: "TWSE盤後資料庫 + FinMind財報引擎",
         twoDaysBelowMA: true,
         longBlackBreakMA5: true,
         maBullishAlign: false,
@@ -107,111 +141,187 @@
         missingBranchData: false,
         fundRevGrowthTheme: true,
         sectorHotFocus: false,
-        institutionalNote: "外資-4,200張 / 投信-1,150張 (法人同步轉賣調節)。",
-        marginNote: "融資單日暴增+3,450張 (散戶進場接刀)，借券賣出增加+1,500張 (空方加壓)。",
-        branchNote: "凱基台北、美林等關鍵分點大單連日倒貨",
-        fundamentalNote: "GB200水冷題材雖熱，但帳面虧損達-8.46%且跌破20MA，嚴禁拿基本面利多當凹單藉口！"
+        institutionalNote: "外資 -4,200張 / 投信 -1,150張 (三大法人同步轉賣調節)。",
+        marginNote: "融資單日暴增 +3,450張 (散戶進場接刀)，借券賣出增加 +1,500張 (空方加壓)。",
+        branchNote: "🤖 系統籌碼推算：法人大舉調節而散戶融資逆勢暴增，籌碼明顯發散敗壞（附註：凱基台北、美林連日倒貨）。",
+        revenueNote: "最新單月營收年增 (YoY) +28.5%、月增 (MoM) +3.1%，基本面維持成長。",
+        epsNote: "最新單季 EPS 5.82 元｜本益比 (PE) 約 25.1 倍",
+        fundamentalNote: "GB200 水冷散熱題材雖熱，但帳面虧損達 -8.46% 且跌破 20MA，嚴禁拿基本面利多當凹單藉口！",
+        newsItems: [
+          { title: "AI水冷散熱族群高檔震盪 法人提醒留意短期技術面修正風險", pubDate: "近期焦點", link: "https://news.google.com/search?q=3017+奇鋐&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" }
+        ]
       },
       {
-        id: "2317",
-        code: "2317",
-        name: "鴻海",
-        lots: 5,
-        avgCost: 195.0,
-        prevHigh: 218.0,
-        todayClose: 201.5,
-        todayHigh: 204.0,
-        ma5: 203.0,
-        ma10: 201.0,
-        ma20: 198.0,
+        id: "009816",
+        code: "009816",
+        name: "凱基台灣TOP50",
+        lots: 50,
+        avgCost: 14.3,
+        prevHigh: 15.0,
+        todayClose: 13.88,
+        todayHigh: 14.20,
+        ma5: 14.12,
+        ma10: 14.25,
+        ma20: 14.18,
+        ma60: 13.75,
         mode: "swing",
+        stopLossPct: 8.0,
+        stopMaType: "ma60", // ETF 示範以 60MA 季線為防守
+        maBreakBufferPct: 2.0,
         lastSyncedAt: "預設載入",
-        syncSource: "TWSE盤後資料庫 + FinMind K線",
+        syncSource: "TWSE ETF 資料庫 + 即時行情",
         twoDaysBelowMA: false,
         longBlackBreakMA5: false,
-        maBullishAlign: true,
+        maBullishAlign: false,
         priceVolGood: false,
         vetoMarginSpikeForeignSell: false,
         vetoDayTraderLockLimitUp: false,
-        chipForeignTrustBuy: false,
+        chipForeignTrustBuy: true,
         chipMarginDownShortUp: true,
         chipNoDayTrader: true,
-        missingBranchData: true,
+        missingBranchData: false,
         fundRevGrowthTheme: true,
         sectorHotFocus: true,
-        institutionalNote: "外資小幅調節-3,200張，投信續買+1,100張，土洋多空拉鋸。",
-        marginNote: "融資小減-450張，借券賣出餘額持平。",
-        branchNote: "",
-        fundamentalNote: "GB200伺服器機櫃出貨在即，最高曾獲利+11.79%已啟動「成本+1%保本線」，嚴格防守198.0元絕不允許由盈轉虧。"
+        institutionalNote: "被動式市值型 ETF，外資與自營商造市流動性充沛，折溢價維持合理區間。",
+        marginNote: "ETF 籌碼穩定，長線定期定額與波段買盤承接。",
+        branchNote: "🤖 系統籌碼推算：此標的為市值型 ETF (009816 凱基台灣TOP50)，走勢緊貼台股前 50 大權值股與淨值表現，無單一主力惡意隔日沖問題。",
+        revenueNote: "ETF 追蹤「特選臺灣TOP 50指數」(不適用公司月營收)",
+        epsNote: "不配息設計（現金股利自動再投入淨值複利滾存）｜經理費 0.07%",
+        fundamentalNote: "篩選台股市值前 50 大且近四季稅後純益總和 > 0 之獲利企業，並搭配動能加碼機制，目前防守底線設定為 60MA 季線 (13.75元)。",
+        newsItems: [
+          { title: "009816 凱基台灣TOP50 主打不配息股利自動再投資 吸引長線複利買盤關注", pubDate: "近期焦點", link: "https://news.google.com/search?q=009816+凱基台灣TOP50&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" }
+        ]
       }
     ];
 
     function App() {
-      // 讀取 LocalStorage 確保重整不會洗掉資料
+      // 讀取 LocalStorage 並自動修正舊版的錯誤名稱 (如 009816 自動抓取標的 -> 凱基台灣TOP50)
       const [stocks, setStocks] = useState(() => {
         try {
-          const saved = localStorage.getItem("wallstreet_tw_stocks_v2");
+          const saved = localStorage.getItem("wallstreet_tw_stocks_v3");
           if (saved) {
             const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return parsed.map(item => {
+                const cleanCode = String(item.code).trim().toUpperCase();
+                const fixedName = BUILTIN_STOCK_DIR[cleanCode] && (item.name.includes("自動抓取") || item.name.includes("台股精選") || item.name.includes("台股 "))
+                  ? BUILTIN_STOCK_DIR[cleanCode]
+                  : item.name;
+                return {
+                  stopLossPct: item.mode === "short" ? 5.0 : 8.0,
+                  stopMaType: item.mode === "short" ? "ma10" : "ma20",
+                  maBreakBufferPct: 3.0,
+                  ma60: Number((Number(item.ma20 || item.avgCost) * 0.97).toFixed(2)),
+                  revenueNote: item.revenueNote || "點擊「🔄 抓價」即可自動聯網抓取最新月營收 YoY / MoM",
+                  epsNote: item.epsNote || "點擊「🔄 抓價」即可自動聯網抓取最新單季 EPS 與本益比",
+                  newsItems: item.newsItems || [],
+                  ...item,
+                  name: fixedName
+                };
+              });
+            }
           }
         } catch (e) {}
         return INITIAL_STOCKS;
       });
 
       const [selectedStockId, setSelectedStockId] = useState(() => stocks[0]?.id || "2330");
-      const [colorStyle, setColorStyle] = useState("tw"); // 'tw': 紅漲綠跌 | 'us': 綠漲紅跌
-      const [activeTab, setActiveTab] = useState("dashboard"); // 'dashboard' | 'markdown'
+      const [colorStyle, setColorStyle] = useState("tw");
+      const [activeTab, setActiveTab] = useState("dashboard");
       const [snapshotInput, setSnapshotInput] = useState("");
       const [syncBannerMsg, setSyncBannerMsg] = useState(null);
       const [copiedType, setCopiedType] = useState(null);
 
-      // 新增與編輯視窗狀態
+      // 新增與微調視窗狀態
       const [isAddModalOpen, setIsAddModalOpen] = useState(false);
       const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
-      const [newForm, setNewForm] = useState({ code: "", name: "", lots: 1, avgCost: "", prevHigh: "", mode: "swing" });
+      const [newForm, setNewForm] = useState({
+        code: "",
+        name: "",
+        lots: 1,
+        avgCost: "",
+        prevHigh: "",
+        mode: "swing",
+        stopLossPct: 8.0,
+        stopMaType: "ma20",
+        maBreakBufferPct: 3.0
+      });
 
-      // 連線抓取狀態
       const [fetchingIds, setFetchingIds] = useState({});
       const [isSyncingAll, setIsSyncingAll] = useState(false);
       const [stockDict, setStockDict] = useState(BUILTIN_STOCK_DIR);
 
-      // 每次庫存變動自動寫入 LocalStorage
+      // 儲存至 LocalStorage
       useEffect(() => {
         try {
-          localStorage.setItem("wallstreet_tw_stocks_v2", JSON.stringify(stocks));
+          localStorage.setItem("wallstreet_tw_stocks_v3", JSON.stringify(stocks));
         } catch (e) {}
       }, [stocks]);
 
-      // 取得今日日期字串 YYYY/MM/DD
+      // 啟動時從 FinMind TaiwanStockInfo 擴充全市場台股與 ETF 正確中文名稱字典
+      useEffect(() => {
+        const loadAllTwStockNames = async () => {
+          try {
+            const res = await fetch("https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo");
+            if (res.ok) {
+              const json = await res.json();
+              if (Array.isArray(json?.data) && json.data.length > 0) {
+                const map = { ...BUILTIN_STOCK_DIR };
+                json.data.forEach(item => {
+                  if (item.stock_id && item.stock_name) {
+                    map[item.stock_id] = item.stock_name;
+                  }
+                });
+                // 確保 009816 固定為凱基台灣TOP50
+                map["009816"] = "凱基台灣TOP50";
+                setStockDict(map);
+              }
+            }
+          } catch (e) {}
+        };
+        loadAllTwStockNames();
+      }, []);
+
       const todayDateStr = useMemo(() => {
         const d = new Date();
         return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
       }, []);
 
       // ============================================================================
-      // 🌐 核心多源聯網抓取引擎 (FinMind K線 + FinMind 法人/資券 + TWSE/Yahoo 備援)
+      // 🌐 全方位自動抓取引擎 (股名 + K線5/10/20/60MA + 法人資券 + 主力推算 + 月營收/EPS/PE + Google新聞)
       // ============================================================================
       const fetchSingleStockMarketData = async (stockItem) => {
         const cleanCode = String(stockItem.code).trim().toUpperCase();
+        const isETF = cleanCode.startsWith("00");
         const nowTimeStr = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
-        let fetchedName = stockItem.name && !stockItem.name.includes("自動抓取") && !stockItem.name.includes("台股 ")
-          ? stockItem.name
-          : (stockDict[cleanCode] || BUILTIN_STOCK_DIR[cleanCode] || "");
+        // 1. 優先確認正確股票/ETF名稱
+        let fetchedName = BUILTIN_STOCK_DIR[cleanCode] || stockDict[cleanCode] || "";
+        if (!fetchedName && stockItem.name && !stockItem.name.includes("自動抓取") && !stockItem.name.includes("抓取中") && !stockItem.name.includes("台股精選")) {
+          fetchedName = stockItem.name;
+        }
 
         let priceResult = null;
         let instNote = stockItem.institutionalNote;
         let margNote = stockItem.marginNote;
+        let autoBranchNote = stockItem.branchNote;
+        let revenueNote = stockItem.revenueNote;
+        let epsNote = stockItem.epsNote;
+        let newsList = Array.isArray(stockItem.newsItems) ? stockItem.newsItems : [];
+
         let chipForeignTrustBuy = stockItem.chipForeignTrustBuy;
         let chipMarginDownShortUp = stockItem.chipMarginDownShortUp;
-        let vetoMarginSpikeForeignSell = stockItem.vetoMarginSpikeForeignSell;
+        let chipNoDayTrader = stockItem.chipNoDayTrader;
+        let vetoMarginSpikeForeignSell = false;
+        let fundRevGrowthTheme = stockItem.fundRevGrowthTheme;
         let sourceLabel = "";
 
-        const startD = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
-        const startDShort = new Date(Date.now() - 15 * 86400000).toISOString().slice(0, 10);
+        // 為計算 60MA (季線)，往前抓 130 天歷史 K 線
+        const startD130 = new Date(Date.now() - 135 * 86400000).toISOString().slice(0, 10);
+        const startDShort = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
+        const startDYear = new Date(Date.now() - 420 * 86400000).toISOString().slice(0, 10);
 
-        // 1. 嘗試從 FinMind 查詢股票中文名稱 (若字典沒有)
+        // Step A: 若無名稱，向 FinMind TaiwanStockInfo 查詢
         if (!fetchedName) {
           try {
             const infoRes = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo&data_id=${encodeURIComponent(cleanCode)}`);
@@ -219,15 +329,16 @@
               const infoJson = await infoRes.json();
               if (Array.isArray(infoJson?.data) && infoJson.data.length > 0) {
                 fetchedName = infoJson.data[0].stock_name || fetchedName;
-                if (fetchedName) setStockDict(prev => ({ ...prev, [cleanCode]: fetchedName }));
               }
             }
           } catch (e) {}
         }
 
-        // 2. 嘗試從 FinMind 抓取近 60 日歷史 K 線並精算 5MA / 10MA / 20MA
+        // Step B: 抓取歷史 K 線並精算 5MA / 10MA / 20MA / 60MA (FinMind 主引擎)
+        let latestVolumeRatio = 1.0;
+        let hasUpperShadow = false;
         try {
-          const fmUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(cleanCode)}&start_date=${startD}`;
+          const fmUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(cleanCode)}&start_date=${startD130}`;
           const fmRes = await fetch(fmUrl);
           if (fmRes.ok) {
             const fmJson = await fmRes.json();
@@ -244,14 +355,20 @@
                 const ma5 = calcMA(5);
                 const ma10 = calcMA(10);
                 const ma20 = calcMA(20);
+                const ma60 = calcMA(60);
                 const todayClose = Number(latest.close);
                 const todayHigh = Number(latest.max || latest.close);
-                const baseMA = stockItem.mode === "short" ? ma10 : ma20;
+                const todayOpen = Number(latest.open || latest.close);
 
-                const twoDaysBelowMA = rows.length >= 2 && Number(latest.close) < baseMA && Number(prevRow.close) < baseMA;
+                const activeMaType = stockItem.stopMaType || (stockItem.mode === "short" ? "ma10" : "ma20");
+                const baseMA = activeMaType === "ma10" ? ma10 : activeMaType === "ma60" ? ma60 : ma20;
+
+                const twoDaysBelowMA = activeMaType !== "none" && rows.length >= 2 && Number(latest.close) < baseMA && Number(prevRow.close) < baseMA;
                 const avgVol5 = rows.slice(-5).reduce((a, c) => a + Number(c.Trading_Volume || 0), 0) / Math.min(5, rows.length);
-                const isHeavyVol = Number(latest.Trading_Volume || 0) > avgVol5 * 1.4;
-                const isLongBlack = Number(latest.close) < Number(latest.open) * 0.975;
+                latestVolumeRatio = avgVol5 > 0 ? Number(latest.Trading_Volume || 0) / avgVol5 : 1.0;
+                const isHeavyVol = latestVolumeRatio > 1.45;
+                const isLongBlack = todayClose < todayOpen * 0.975;
+                hasUpperShadow = (todayHigh - Math.max(todayClose, todayOpen)) / todayClose > 0.02;
 
                 priceResult = {
                   todayClose,
@@ -259,11 +376,12 @@
                   ma5,
                   ma10,
                   ma20,
+                  ma60,
                   dataDate: latest.date,
                   twoDaysBelowMA,
                   longBlackBreakMA5: isLongBlack && isHeavyVol && todayClose < ma5,
                   maBullishAlign: todayClose >= ma5 && ma5 >= ma10 && ma10 >= ma20,
-                  priceVolGood: Number(latest.close) >= Number(prevRow.close)
+                  priceVolGood: todayClose >= Number(prevRow.close)
                 };
                 sourceLabel = `FinMind 歷史K線 (${latest.date})`;
               }
@@ -271,13 +389,13 @@
           }
         } catch (e) {}
 
-        // 3. 若 FinMind 無此代號 (如新掛牌 ETF 009816)，啟用 Yahoo Finance 跨網域 Proxy 抓取 K 線
+        // Step C: 若 FinMind 無此代號 (例如新掛牌 ETF 009816)，自動切換至 Yahoo Finance 跨網域抓取 3 個月 K 線算 5/10/20/60MA
         if (!priceResult) {
           const suffixes = [".TW", ".TWO"];
           for (const sfx of suffixes) {
             if (priceResult) break;
             try {
-              const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanCode}${sfx}?range=2mo&interval=1d`;
+              const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanCode}${sfx}?range=6mo&interval=1d`;
               const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
               const yRes = await fetch(proxyUrl);
               if (yRes.ok) {
@@ -287,7 +405,7 @@
                 if (result) {
                   const meta = result.meta || {};
                   if (!fetchedName && (meta.shortName || meta.longName)) {
-                    fetchedName = meta.shortName || meta.longName;
+                    fetchedName = BUILTIN_STOCK_DIR[cleanCode] || meta.shortName || meta.longName;
                   }
                   const quotes = result.indicators?.quote?.[0] || {};
                   const closes = (quotes.close || []).map((c, idx) => ({
@@ -307,9 +425,12 @@
                     const ma5 = calcMA(5);
                     const ma10 = calcMA(10);
                     const ma20 = calcMA(20);
+                    const ma60 = calcMA(60);
                     const todayClose = Number(Number(latest.close).toFixed(2));
                     const todayHigh = Number(Number(latest.high || latest.close).toFixed(2));
-                    const baseMA = stockItem.mode === "short" ? ma10 : ma20;
+
+                    const activeMaType = stockItem.stopMaType || (stockItem.mode === "short" ? "ma10" : "ma20");
+                    const baseMA = activeMaType === "ma10" ? ma10 : activeMaType === "ma60" ? ma60 : ma20;
 
                     priceResult = {
                       todayClose,
@@ -317,13 +438,14 @@
                       ma5,
                       ma10,
                       ma20,
+                      ma60,
                       dataDate: "最新交易日",
-                      twoDaysBelowMA: closes.length >= 2 && todayClose < baseMA && Number(prevRow.close) < baseMA,
+                      twoDaysBelowMA: activeMaType !== "none" && closes.length >= 2 && todayClose < baseMA && Number(prevRow.close) < baseMA,
                       longBlackBreakMA5: todayClose < Number(latest.open) * 0.975 && todayClose < ma5,
                       maBullishAlign: todayClose >= ma5 && ma5 >= ma10 && ma10 >= ma20,
                       priceVolGood: todayClose >= Number(prevRow.close)
                     };
-                    sourceLabel = `Yahoo Finance 行情 (${cleanCode}${sfx})`;
+                    sourceLabel = `Yahoo Finance K線 (${cleanCode}${sfx})`;
                   }
                 }
               }
@@ -331,18 +453,22 @@
           }
         }
 
-        // 4. 抓取三大法人買賣超 (FinMind Institutional Investors)
+        // Step D: 抓取三大法人買賣超 + 融資融券變化 + 自動推算主力分點動向
+        let fNet = 0, tNet = 0, dNet = 0, mDiff = 0, sDiff = 0;
+        let hasInstData = false;
+        let hasMarginData = false;
+
         try {
           const instUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDShort}`;
           const instRes = await fetch(instUrl);
           if (instRes.ok) {
             const instJson = await instRes.json();
             if (Array.isArray(instJson?.data) && instJson.data.length > 0) {
+              hasInstData = true;
               const dates = [...new Set(instJson.data.map(d => d.date))].sort();
               const latestDate = dates[dates.length - 1];
               const dayRows = instJson.data.filter(d => d.date === latestDate);
 
-              let fNet = 0, tNet = 0, dNet = 0;
               dayRows.forEach(r => {
                 const diffLots = Math.round((Number(r.buy || 0) - Number(r.sell || 0)) / 1000);
                 if (String(r.name).includes("Foreign")) fNet += diffLots;
@@ -352,24 +478,21 @@
 
               const fmt = (n) => (n >= 0 ? `+${n.toLocaleString()}張` : `${n.toLocaleString()}張`);
               instNote = `外資 ${fmt(fNet)} / 投信 ${fmt(tNet)} / 自營商 ${fmt(dNet)} (資料日:${latestDate})`;
-              chipForeignTrustBuy = (fNet > 0 && tNet >= 0) || (tNet > 0 && fNet >= 0) || (fNet + tNet > 100);
-              if (fNet < -500 && tNet < -100) {
-                vetoMarginSpikeForeignSell = true;
-              }
+              chipForeignTrustBuy = (fNet > 0 && tNet >= 0) || (tNet > 0 && fNet >= 0) || (fNet + tNet > 80);
             }
           }
         } catch (e) {}
 
-        // 5. 抓取融資融券變化 (FinMind Margin Purchase Short Sale)
         try {
           const margUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMarginPurchaseShortSale&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDShort}`;
           const margRes = await fetch(margUrl);
           if (margRes.ok) {
             const margJson = await margRes.json();
             if (Array.isArray(margJson?.data) && margJson.data.length > 0) {
+              hasMarginData = true;
               const latestM = margJson.data[margJson.data.length - 1];
-              const mDiff = Math.round((Number(latestM.MarginPurchaseBuy || 0) - Number(latestM.MarginPurchaseSell || 0) - Number(latestM.MarginPurchaseCashRepayment || 0)));
-              const sDiff = Math.round((Number(latestM.ShortSaleSell || 0) - Number(latestM.ShortSaleBuy || 0) - Number(latestM.ShortSaleCashRepayment || 0)));
+              mDiff = Math.round((Number(latestM.MarginPurchaseBuy || 0) - Number(latestM.MarginPurchaseSell || 0) - Number(latestM.MarginPurchaseCashRepayment || 0)));
+              sDiff = Math.round((Number(latestM.ShortSaleSell || 0) - Number(latestM.ShortSaleBuy || 0) - Number(latestM.ShortSaleCashRepayment || 0)));
               const fmt = (n) => (n >= 0 ? `+${n.toLocaleString()}張` : `${n.toLocaleString()}張`);
               margNote = `融資變化 ${fmt(mDiff)} / 融券變化 ${fmt(sDiff)} (${latestM.date})，${mDiff <= 0 ? "散戶浮額減少、籌碼沉澱" : "融資增加、留意散戶追高"}。`;
               chipMarginDownShortUp = mDiff <= 0;
@@ -377,1063 +500,89 @@
           }
         } catch (e) {}
 
-        const finalClose = priceResult?.todayClose ?? Number(stockItem.todayClose || stockItem.avgCost || 100);
-        const finalHigh = priceResult?.todayHigh ?? Number(stockItem.todayHigh || finalClose);
-        const finalPrevHigh = Math.max(Number(stockItem.prevHigh || 0), Number(stockItem.avgCost || 0), finalClose, finalHigh);
-        const finalName = fetchedName || `台股標的(${cleanCode})`;
-
-        return {
-          ...stockItem,
-          code: cleanCode,
-          name: finalName,
-          prevHigh: finalPrevHigh,
-          todayClose: finalClose,
-          todayHigh: finalHigh,
-          ma5: priceResult?.ma5 ?? Number((finalClose * 0.99).toFixed(2)),
-          ma10: priceResult?.ma10 ?? Number((finalClose * 0.98).toFixed(2)),
-          ma20: priceResult?.ma20 ?? Number((finalClose * 0.96).toFixed(2)),
-          twoDaysBelowMA: priceResult ? priceResult.twoDaysBelowMA : stockItem.twoDaysBelowMA,
-          longBlackBreakMA5: priceResult ? priceResult.longBlackBreakMA5 : stockItem.longBlackBreakMA5,
-          maBullishAlign: priceResult ? priceResult.maBullishAlign : stockItem.maBullishAlign,
-          priceVolGood: priceResult ? priceResult.priceVolGood : stockItem.priceVolGood,
-          chipForeignTrustBuy,
-          chipMarginDownShortUp,
-          vetoMarginSpikeForeignSell,
-          institutionalNote: instNote || "外資与投信盤後籌碼已同步檢索完成。",
-          marginNote: margNote || "資券結構穩定，無異常暴增訊號。",
-          fundamentalNote: priceResult
-            ? `已自動同步 ${cleanCode} ${finalName} 最新收盤 ${finalClose} 元 (5MA:${priceResult.ma5} / 10MA:${priceResult.ma10} / 20MA:${priceResult.ma20})，嚴格依演算法防守底線執行操作。`
-            : `已完成 ${cleanCode} ${finalName} 基礎部位建立，若為特殊或新掛牌標的，可點選右側「手動微調」補充細節。`,
-          lastSyncedAt: `${nowTimeStr} 同步完成`,
-          syncSource: sourceLabel || "預設均線推算引擎"
-        };
-      };
-
-      // 單檔更新按鈕觸發
-      const handleSyncSingleStock = async (stockItem, e) => {
-        if (e) e.stopPropagation();
-        setFetchingIds(prev => ({ ...prev, [stockItem.id]: true }));
-        setSyncBannerMsg(`⏳ 正在聯網抓取【${stockItem.code} ${stockItem.name || ""}】最新盤後收盤價、均線與法人資券數據...`);
-
-        const updated = await fetchSingleStockMarketData(stockItem);
-        setStocks(prev => prev.map(s => (s.id === stockItem.id ? updated : s)));
-        setFetchingIds(prev => ({ ...prev, [stockItem.id]: false }));
-        setSyncBannerMsg(`✅ 【${updated.code} ${updated.name}】盤後數據更新完成！最新收盤價：${updated.todayClose} 元 (${updated.syncSource})`);
-      };
-
-      // 全庫存一鍵自動抓取
-      const handleSyncAllStocks = async () => {
-        if (isSyncingAll || stocks.length === 0) return;
-        setIsSyncingAll(true);
-        setSyncBannerMsg(`⏳ 正在批量連線抓取全庫存 (${stocks.length} 檔) 最新盤後 K 線、5/10/20MA 均線與法人籌碼...`);
-
-        const nextList = [];
-        for (const item of stocks) {
-          setFetchingIds(prev => ({ ...prev, [item.id]: true }));
-          const updated = await fetchSingleStockMarketData(item);
-          nextList.push(updated);
-          setFetchingIds(prev => ({ ...prev, [item.id]: false }));
-        }
-        setStocks(nextList);
-        setIsSyncingAll(false);
-        setSyncBannerMsg(`✅ 全庫存 (${nextList.length} 檔) 盤後行情與風控指標已全數更新完畢！`);
-      };
-
-      // 新增股票並自動聯網抓取
-      const handleAddStockSubmit = async (e) => {
-        e.preventDefault();
-        const cleanCode = String(newForm.code).trim().toUpperCase();
-        const avgCostNum = Number(newForm.avgCost);
-        const lotsNum = Number(newForm.lots) || 1;
-        if (!cleanCode || !avgCostNum || avgCostNum <= 0) {
-          alert("請輸入有效的「股票代號」與「平均成本」！");
-          return;
+        // 檢查是否觸發「融資大增 + 法人同步大賣」一票否決
+        if (mDiff > 500 && fNet < -300 && tNet <= 0) {
+          vetoMarginSpikeForeignSell = true;
         }
 
-        const matchedName = newForm.name.trim() || stockDict[cleanCode] || BUILTIN_STOCK_DIR[cleanCode] || "";
-        const initHigh = Number(newForm.prevHigh) > 0 ? Number(newForm.prevHigh) : avgCostNum;
-        const newId = `${cleanCode}_${Date.now()}`;
-
-        const draftStock = {
-          id: newId,
-          code: cleanCode,
-          name: matchedName || `抓取中(${cleanCode})`,
-          lots: lotsNum,
-          avgCost: avgCostNum,
-          prevHigh: Math.max(initHigh, avgCostNum),
-          todayClose: avgCostNum,
-          todayHigh: avgCostNum,
-          ma5: Number((avgCostNum * 0.99).toFixed(2)),
-          ma10: Number((avgCostNum * 0.98).toFixed(2)),
-          ma20: Number((avgCostNum * 0.96).toFixed(2)),
-          mode: newForm.mode || "swing",
-          lastSyncedAt: "連線抓取中...",
-          syncSource: "自動抓取引擎",
-          twoDaysBelowMA: false,
-          longBlackBreakMA5: false,
-          maBullishAlign: true,
-          priceVolGood: true,
-          vetoMarginSpikeForeignSell: false,
-          vetoDayTraderLockLimitUp: false,
-          chipForeignTrustBuy: true,
-          chipMarginDownShortUp: true,
-          chipNoDayTrader: true,
-          missingBranchData: true,
-          fundRevGrowthTheme: true,
-          sectorHotFocus: true,
-          institutionalNote: "正在連線抓取三大法人買賣超...",
-          marginNote: "正在連線抓取融資融券變化...",
-          branchNote: "",
-          fundamentalNote: "正在自動計算最新均線與風控防守位階..."
-        };
-
-        setStocks(prev => [...prev, draftStock]);
-        setSelectedStockId(newId);
-        setIsAddModalOpen(false);
-        setNewForm({ code: "", name: "", lots: 1, avgCost: "", prevHigh: "", mode: "swing" });
-
-        // 立即自動聯網抓取該檔股票真實數據
-        setFetchingIds(prev => ({ ...prev, [newId]: true }));
-        setSyncBannerMsg(`⏳ 已新增【${cleanCode}】，正在自動聯網抓取最新盤後收盤價、均線與籌碼資訊...`);
-        const syncedStock = await fetchSingleStockMarketData(draftStock);
-        setStocks(prev => prev.map(s => (s.id === newId ? syncedStock : s)));
-        setFetchingIds(prev => ({ ...prev, [newId]: false }));
-        setSyncBannerMsg(`✅ 【${syncedStock.code} ${syncedStock.name}】自動抓取完成！最新收盤：${syncedStock.todayClose} 元`);
-      };
-
-      // 刪除庫存
-      const handleDeleteStock = (id, code, name, e) => {
-        if (e) e.stopPropagation();
-        if (window.confirm(`確定要從庫存風控儀表板中刪除【${code} ${name}】嗎？`)) {
-          setStocks(prev => {
-            const next = prev.filter(s => s.id !== id);
-            if (selectedStockId === id && next.length > 0) {
-              setSelectedStockId(next[0].id);
+        // 自動生成「主力/分點」智能推算結論 (若使用者未強制手寫特定分點)
+        const isUserCustomBranch = stockItem.branchNote && !stockItem.branchNote.startsWith("🤖");
+        if (!isUserCustomBranch) {
+          if (isETF) {
+            autoBranchNote = `🤖 系統籌碼推算：此標的為 ETF (${cleanCode} ${fetchedName || ""})，主要由外資與自營商造市商進行流動性調節，走勢緊貼成分股淨值，無單一隔日沖主力亂場問題。`;
+            chipNoDayTrader = true;
+          } else if (hasInstData) {
+            const totalInst = fNet + tNet + dNet;
+            if (fNet > 200 && tNet > 50) {
+              autoBranchNote = `🤖 系統籌碼推算：外資(+${fNet}張)與投信(+${tNet}張)土洋合買鎖碼，且${mDiff <= 0 ? "融資減少散戶退場" : "買盤積極"}，主力大戶籌碼集中度極高。`;
+              chipNoDayTrader = true;
+            } else if (totalInst < -500 && mDiff > 300) {
+              autoBranchNote = `🤖 系統籌碼推算：三大法人合計賣超 ${totalInst} 張，但散戶融資逆勢增加 +${mDiff} 張，呈現「主力倒貨、散戶接刀」之籌碼發散訊號！`;
+              chipNoDayTrader = false;
+            } else if (latestVolumeRatio > 1.8 && hasUpperShadow) {
+              autoBranchNote = `🤖 系統籌碼推算：今日成交量放大至五日均量 ${latestVolumeRatio.toFixed(1)} 倍且留上影線，顯示短線/隔日沖大戶逢高調節，明日早盤留意賣壓（若有特定券商明細可於「微調」補充）。`;
+              chipNoDayTrader = false;
+            } else if (totalInst >= 0) {
+              autoBranchNote = `🤖 系統籌碼推算：法人合計買超 +${totalInst} 張，量能溫和穩定，未見異常隔日沖大舉出貨跡象（若需記錄特定券商分點可點選「✏️ 微調」補充）。`;
+              chipNoDayTrader = true;
+            } else {
+              autoBranchNote = `🤖 系統籌碼推算：法人小幅調節 ${totalInst} 張，籌碼中性整理（若需記錄特定券商分點可點選「✏️ 微調」補充）。`;
+              chipNoDayTrader = true;
             }
-            return next;
-          });
-          setSyncBannerMsg(`🗑️ 已刪除庫存【${code} ${name}】`);
-        }
-      };
-
-      // ============================================================================
-      // 🧮 風控與紀律演算法 (嚴格先算後寫 + 四維度評分)
-      // ============================================================================
-      const evaluatedStocks = useMemo(() => {
-        return stocks.map(s => {
-          const avgCost = Number(s.avgCost) || 0;
-          const todayClose = Number(s.todayClose) || 0;
-          const todayHigh = Number(s.todayHigh) || todayClose;
-          const prevHigh = Number(s.prevHigh) || avgCost;
-          const ma5 = Number(s.ma5) || 0;
-          const ma10 = Number(s.ma10) || 0;
-          const ma20 = Number(s.ma20) || 0;
-          const isShort = s.mode === "short";
-
-          // 1. 精準驗算：更新期間最高價 & 帳面損益(%) & 最高曾達獲利(%)
-          const updatedHigh = Math.max(prevHigh, todayHigh, todayClose);
-          const pnlPct = avgCost > 0 ? ((todayClose - avgCost) / avgCost) * 100 : 0;
-          const peakGainPct = avgCost > 0 ? ((updatedHigh - avgCost) / avgCost) * 100 : 0;
-          const drawdownFromPeakPct = updatedHigh > 0 ? ((updatedHigh - todayClose) / updatedHigh) * 100 : 0;
-          const marketValue = Math.round(todayClose * Number(s.lots || 0) * 1000);
-          const unrealizedPnL = Math.round((todayClose - avgCost) * Number(s.lots || 0) * 1000);
-
-          // 2. 硬性停損線 (波段 -8% & 20MA；短線 -5% & 10MA)
-          const hardStopLossLimitPct = isShort ? -5.0 : -8.0;
-          const costStopFactor = isShort ? 0.95 : 0.92;
-          const baseMA = isShort ? ma10 : ma20;
-          const baseMALabel = isShort ? "10MA(十日線)" : "20MA(月線)";
-
-          const hardStopPriceByCost = avgCost * costStopFactor;
-          const defaultHardStopPrice = Math.max(hardStopPriceByCost, baseMA);
-          const techBreak3PctPrice = baseMA * 0.97;
-
-          const isFundStopTriggered = pnlPct <= hardStopLossLimitPct;
-          const isTechStopTriggered = (baseMA > 0 && todayClose <= techBreak3PctPrice) || Boolean(s.twoDaysBelowMA);
-          const isHardStopTriggered = isFundStopTriggered || isTechStopTriggered;
-
-          // 3. 動態移動停利 (>= +15% 激活；回落 5% 或爆量長黑破 5MA) 與 保本線 (+8% ~ +14.99%)
-          const isTrailingActive = peakGainPct >= 15.0;
-          const trailingStopPrice = updatedHigh * 0.95;
-          const isTrailingTriggered = isTrailingActive && (todayClose <= trailingStopPrice || Boolean(s.longBlackBreakMA5));
-
-          const isBreakevenActive = !isTrailingActive && peakGainPct >= 8.0;
-          const breakevenPrice = avgCost * 1.01;
-          const isBreakevenTriggered = isBreakevenActive && todayClose <= breakevenPrice;
-
-          // 4. 籌碼敗壞一票否決
-          const isChipVetoTriggered = Boolean(s.vetoMarginSpikeForeignSell) || Boolean(s.vetoDayTraderLockLimitUp);
-
-          // 5. 決定目前防守底線顯示與系統強制指令
-          let defenseLinePrice = defaultHardStopPrice;
-          let defenseLineLabel = `預設停損價 (Max(成本×${costStopFactor}, ${baseMALabel}))`;
-
-          if (isTrailingActive) {
-            defenseLinePrice = Math.max(trailingStopPrice, ma5);
-            defenseLineLabel = `移動停利價 (最高價回落5%: ${trailingStopPrice.toFixed(2)} / 5MA: ${ma5.toFixed(2)})`;
-          } else if (isBreakevenActive) {
-            defenseLinePrice = Math.max(breakevenPrice, baseMA);
-            defenseLineLabel = `保本防守線 (成本+1%: ${breakevenPrice.toFixed(2)} / ${baseMALabel}: ${baseMA.toFixed(2)})`;
+          } else {
+            autoBranchNote = `🤖 系統籌碼推算：量價結構平穩，無異常爆量出貨訊號（公開API不含單一券商分點明細，可於「✏️ 微調」手動補充）。`;
           }
+        }
 
-          let actionCommand = "【🟢 續抱】";
-          let actionBadgeType = "hold";
-          let actionReason = "未觸發停損或移動停利條件，守穩防守底線續抱。";
-
-          if (isHardStopTriggered) {
-            actionCommand = "【🚨 觸價停損】";
-            actionBadgeType = "stop_loss";
-            const reasons = [];
-            if (isFundStopTriggered) reasons.push(`帳面虧損達 ${pnlPct.toFixed(2)}% (觸發 ${hardStopLossLimitPct}% 鐵律)`);
-            if (baseMA > 0 && todayClose <= techBreak3PctPrice) reasons.push(`收盤跌破 ${baseMALabel} 超過 3%`);
-            if (s.twoDaysBelowMA) reasons.push(`連續兩日站不回 ${baseMALabel}`);
-            actionReason = `強制砍單：${reasons.join(" + ")}，拒絕基本面凹單！`;
-          } else if (isTrailingTriggered) {
-            actionCommand = "【💰 減碼停利】";
-            actionBadgeType = "take_profit";
-            const reasons = [];
-            if (todayClose <= trailingStopPrice) reasons.push(`自期間最高價 ${updatedHigh.toFixed(2)} 回落達 ${drawdownFromPeakPct.toFixed(2)}% (>=5%)`);
-            if (s.longBlackBreakMA5) reasons.push("出現爆量長黑跌破 5MA");
-            actionReason = `移動停利觸發：${reasons.join(" + ")}，強制鎖住波段獲利！`;
-          } else if (isBreakevenTriggered) {
-            actionCommand = "【💰 保本停利】";
-            actionBadgeType = "take_profit";
-            actionReason = `曾獲利達 +${peakGainPct.toFixed(2)}%，現跌破成本+1%保本線 (${breakevenPrice.toFixed(2)})，嚴禁由盈轉虧！`;
-          } else if (isChipVetoTriggered) {
-            actionCommand = "【⚠️ 逢高減碼/避險】";
-            actionBadgeType = "chip_veto";
-            const reasons = [];
-            if (s.vetoMarginSpikeForeignSell) reasons.push("融資暴增 + 外資/投信同步大賣");
-            if (s.vetoDayTraderLockLimitUp) reasons.push("知名隔日沖券商鎖漲停");
-            actionReason = `籌碼敗壞一票否決：${reasons.join("、")}，隔日早盤強制逢高減碼避險！`;
-          }
-
-          // 6. 四維度量化評分 (滿分 10 分)
-          let chipScore = 0;
-          if (s.chipForeignTrustBuy) chipScore += 2.0;
-          if (s.chipMarginDownShortUp) chipScore += 1.0;
-          if (s.chipNoDayTrader) chipScore += 1.0;
-          if (s.vetoMarginSpikeForeignSell) chipScore = Math.max(0, chipScore - 2.0);
-          if (s.vetoDayTraderLockLimitUp) chipScore = Math.max(0, chipScore - 1.0);
-
-          let techScore = 0;
-          if (s.maBullishAlign && todayClose >= baseMA) techScore += 1.5;
-          if (s.priceVolGood) techScore += 1.5;
-          if (isTechStopTriggered) techScore = 0;
-          else if (todayClose < baseMA) techScore = Math.max(0, techScore - 1.5);
-
-          const fundScore = s.fundRevGrowthTheme ? 2.0 : 0.5;
-          const sectorScore = s.sectorHotFocus ? 1.0 : 0.0;
-          const totalScore = Number((chipScore + techScore + fundScore + sectorScore).toFixed(1));
-
-          return {
-            ...s,
-            updatedHigh,
-            pnlPct,
-            peakGainPct,
-            drawdownFromPeakPct,
-            marketValue,
-            unrealizedPnL,
-            baseMA,
-            baseMALabel,
-            defaultHardStopPrice,
-            trailingStopPrice,
-            breakevenPrice,
-            defenseLinePrice,
-            defenseLineLabel,
-            isTrailingActive,
-            isBreakevenActive,
-            isHardStopTriggered,
-            isTrailingTriggered,
-            isBreakevenTriggered,
-            isChipVetoTriggered,
-            actionCommand,
-            actionBadgeType,
-            actionReason,
-            chipScore,
-            techScore,
-            fundScore,
-            sectorScore,
-            totalScore
+        // Step E: 自動抓取「每月營收 YoY/MoM」、「財報 EPS」與「本益比/殖利率」
+        if (isETF) {
+          const etfInfo = ETF_FUNDAMENTAL_DB[cleanCode] || {
+            revText: `ETF 基金標的 (${cleanCode})，追蹤標的指數表現，不適用一般公司月營收。`,
+            epsText: "配息與淨值增長依成分股權重與基金公開說明書規範。",
+            peText: "緊貼台股權值或產業成分股基本面趨勢。"
           };
-        });
-      }, [stocks]);
+          revenueNote = etfInfo.revText;
+          epsNote = `${etfInfo.epsText}｜${etfInfo.peText}`;
+          fundRevGrowthTheme = true;
+        } else {
+          // 1. 抓月營收 (TaiwanStockMonthRevenue)
+          try {
+            const revUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMonthRevenue&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDYear}`;
+            const revRes = await fetch(revUrl);
+            if (revRes.ok) {
+              const revJson = await revRes.json();
+              if (Array.isArray(revJson?.data) && revJson.data.length > 0) {
+                const rows = revJson.data;
+                const latestR = rows[rows.length - 1];
+                const prevMonthR = rows.length >= 2 ? rows[rows.length - 2] : null;
+                const prevYearR = rows.find(
+                  r => Number(r.revenue_year) === Number(latestR.revenue_year) - 1 && Number(r.revenue_month) === Number(latestR.revenue_month)
+                );
 
-      const selectedStock = useMemo(() => {
-        return evaluatedStocks.find(s => s.id === selectedStockId) || evaluatedStocks[0] || null;
-      }, [evaluatedStocks, selectedStockId]);
+                const revBillion = (Number(latestR.revenue) / 100000000).toFixed(2);
+                const mom = prevMonthR && Number(prevMonthR.revenue) > 0
+                  ? (((Number(latestR.revenue) - Number(prevMonthR.revenue)) / Number(prevMonthR.revenue)) * 100).toFixed(1)
+                  : null;
+                const yoy = prevYearR && Number(prevYearR.revenue) > 0
+                  ? (((Number(latestR.revenue) - Number(prevYearR.revenue)) / Number(prevYearR.revenue)) * 100).toFixed(1)
+                  : null;
 
-      // 系統狀態記憶碼生成
-      const stateSnapshotCode = useMemo(() => {
-        const itemsStr = evaluatedStocks
-          .map(s => `{${s.code}_${s.name}, 張數:${s.lots}, 成本:${Number(s.avgCost).toFixed(1)}, 期間最高:${Number(s.updatedHigh).toFixed(1)}, 屬性:${s.mode === "short" ? "短線" : "波段"}}`)
-          .join(", ");
-        return `[狀態更新] 日期: ${todayDateStr} | 庫存: ${itemsStr}`;
-      }, [evaluatedStocks, todayDateStr]);
+                const momStr = mom !== null ? `月增(MoM) ${Number(mom) >= 0 ? "+" : ""}${mom}%` : "";
+                const yoyStr = yoy !== null ? `年增(YoY) ${Number(yoy) >= 0 ? "+" : ""}${yoy}%` : "";
+                revenueNote = `${latestR.revenue_year}年${latestR.revenue_month}月營收 ${revBillion} 億元｜${[yoyStr, momStr].filter(Boolean).join("、")}`;
+                if (yoy !== null) {
+                  fundRevGrowthTheme = Number(yoy) > 0 || Number(mom) > 0;
+                }
+              }
+            }
+          } catch (e) {}
 
-      // 解析並載入狀態記憶碼
-      const handleParseSnapshot = async () => {
-        if (!snapshotInput.trim()) {
-          alert("請先在輸入框貼上 [狀態更新] 記憶碼！");
-          return;
-        }
-        const regex = /\{([^_,\s]+)_([^,\s]+),\s*張數:([\d.]+),\s*成本:([\d.]+),\s*期間最高:([\d.]+),\s*屬性:(波段|短線)\}/g;
-        const matches = [...snapshotInput.matchAll(regex)];
-        if (matches.length === 0) {
-          alert("⚠️ 格式解析失敗！請確認格式包含：{股號_名稱, 張數:X, 成本:XX.X, 期間最高:XX.X, 屬性:波段/短線}");
-          return;
-        }
-
-        const parsedList = matches.map((m, idx) => {
-          const [, code, name, lotsStr, costStr, highStr, modeStr] = m;
-          const avgCost = parseFloat(costStr);
-          const prevHigh = parseFloat(highStr);
-          return {
-            id: `${code}_${Date.now()}_${idx}`,
-            code: code.trim(),
-            name: name.trim(),
-            lots: parseFloat(lotsStr),
-            avgCost,
-            prevHigh,
-            todayClose: avgCost,
-            todayHigh: prevHigh,
-            ma5: Number((avgCost * 0.99).toFixed(2)),
-            ma10: Number((avgCost * 0.98).toFixed(2)),
-            ma20: Number((avgCost * 0.96).toFixed(2)),
-            mode: modeStr === "短線" ? "short" : "swing",
-            lastSyncedAt: "記憶碼載入",
-            syncSource: "記憶碼還原",
-            twoDaysBelowMA: false,
-            longBlackBreakMA5: false,
-            maBullishAlign: true,
-            priceVolGood: true,
-            vetoMarginSpikeForeignSell: false,
-            vetoDayTraderLockLimitUp: false,
-            chipForeignTrustBuy: true,
-            chipMarginDownShortUp: true,
-            chipNoDayTrader: true,
-            missingBranchData: true,
-            fundRevGrowthTheme: true,
-            sectorHotFocus: true,
-            institutionalNote: "由狀態記憶碼載入，正在自動更新盤後法人數據...",
-            marginNote: "由狀態記憶碼載入，正在自動更新資券數據...",
-            branchNote: "",
-            fundamentalNote: "由狀態記憶碼還原部位，正在同步最新收盤與均線..."
-          };
-        });
-
-        setStocks(parsedList);
-        setSelectedStockId(parsedList[0].id);
-        setSnapshotInput("");
-        setSyncBannerMsg(`✅ 已成功還原 ${parsedList.length} 檔庫存，正在為您自動聯網同步最新盤後價位...`);
-
-        // 自動聯網更新還原後的庫存
-        setIsSyncingAll(true);
-        const syncedList = [];
-        for (const item of parsedList) {
-          const updated = await fetchSingleStockMarketData(item);
-          syncedList.push(updated);
-        }
-        setStocks(syncedList);
-        setIsSyncingAll(false);
-        setSyncBannerMsg(`✅ 記憶碼還原並完成 ${syncedList.length} 檔最新盤後行情同步！`);
-      };
-
-      // 更新單檔欄位 (用於手動微調抽屜)
-      const updateSelectedStockField = (field, value) => {
-        if (!selectedStock) return;
-        setStocks(prev => prev.map(s => (s.id === selectedStock.id ? { ...s, [field]: value } : s)));
-      };
-
-      // 產生完整 Markdown 報告
-      const fullMarkdownReport = useMemo(() => {
-        const rows = evaluatedStocks
-          .map(s => `| ${s.code} ${s.name} (${s.mode === "short" ? "短線" : "波段"}) | ${s.lots} | ${s.avgCost.toFixed(2)} | ${s.todayClose.toFixed(2)} | ${s.updatedHigh.toFixed(2)} | ${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}% | ${s.defenseLinePrice.toFixed(2)} (${s.defenseLineLabel}) | **${s.actionCommand}** |`)
-          .join("\n");
-
-        const diagSections = evaluatedStocks.map(s => {
-          const branchText = s.missingBranchData || !s.branchNote?.trim()
-            ? "⚠️ 查無當日公開分點數據，請手動補充"
-            : s.branchNote;
-          return `### 【${s.code} ${s.name}】— 多空總評分：${s.totalScore.toFixed(1)} / 10 分 \`(籌碼${s.chipScore.toFixed(1)} + 技術${s.techScore.toFixed(1)} + 基本${s.fundScore.toFixed(1)} + 族群${s.sectorScore.toFixed(1)})\`
-- **📊 籌碼面透視**：
-  * **法人動向**：${s.institutionalNote}
-  * **資券與借券**：${s.marginNote}
-  * **主力/分點**：${branchText}
-- **📈 技術面結構**：今日收盤 ${s.todayClose.toFixed(2)} 元 | 5MA: ${s.ma5.toFixed(2)} | 10MA: ${s.ma10.toFixed(2)} | 20MA: ${s.ma20.toFixed(2)} (${s.todayClose >= s.baseMA ? `站穩${s.baseMALabel}之上` : `🚨 跌破${s.baseMALabel}`})
-- **📰 基本面與消息解讀**：${s.fundamentalNote}
-
-#### ⚡ 【${s.code} ${s.name}】冷酷風控官的明日操作劇本
-- **🧠 紀律當頭棒喝**：${s.actionReason}
-- **🎯 明日實戰三劇本**：
-  * **🟢 強勢進攻 / 續抱條件**：若明日開盤守穩 5MA (${s.ma5.toFixed(2)} 元) 且帶量站上 ${(s.todayClose * 1.015).toFixed(2)} 元，紀律續抱讓獲利奔跑。
-  * **🟡 逢高調節 / 停利條件**：若明日衝高至 ${(Math.max(s.updatedHigh, s.todayClose * 1.03)).toFixed(2)} 元附近出現爆量長上影線或隔日沖倒貨，逢高減碼 1/3 ~ 1/2 鎖住獲利。
-  * **🔴 鐵血停損 / 清倉條件**：若盤中或收盤跌破防守底線 \`${s.defenseLinePrice.toFixed(2)}\` 元，請無條件執行砍單！`;
-        }).join("\n\n---\n\n");
-
-        return `---
-## 📋 一、 個人庫存風控儀表板
-| 股號/名稱 | 張數 | 平均成本 | 今日收盤 | 期間最高價 | 帳面損益(%) | 目前防守底線 (觸發價) | 系統強制指令 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-${rows}
-
-## 🔍 二、 個股四維度深度診斷 & ⚡ 三、 明日操作劇本
-${diagSections}
-
-## 💾 四、 系統狀態記憶碼 (State Snapshot)
-\`${stateSnapshotCode}\`
----`;
-      }, [evaluatedStocks, stateSnapshotCode]);
-
-      // 漲跌顏色輔助
-      const getPnLColor = (val) => {
-        if (val > 0) return colorStyle === "tw" ? "text-rose-400" : "text-emerald-400";
-        if (val < 0) return colorStyle === "tw" ? "text-emerald-400" : "text-rose-400";
-        return "text-slate-300";
-      };
-
-      const getCommandBadgeStyle = (type) => {
-        switch (type) {
-          case "stop_loss":
-            return "bg-rose-950/90 text-rose-300 border-rose-500 font-black animate-pulse shadow-lg shadow-rose-950/50";
-          case "take_profit":
-            return "bg-amber-950/80 text-amber-300 border-amber-500 font-bold";
-          case "chip_veto":
-            return "bg-orange-950/80 text-orange-300 border-orange-500 font-bold";
-          default:
-            return "bg-emerald-950/60 text-emerald-300 border-emerald-500/40 font-semibold";
-        }
-      };
-
-      const handleCopyText = (text, type) => {
-        navigator.clipboard.writeText(text);
-        setCopiedType(type);
-        setTimeout(() => setCopiedType(null), 2000);
-      };
-
-      return (
-        <div className="max-w-7xl mx-auto p-3 md:p-6 space-y-5">
-          {/* 頂部 Header 與控制列 */}
-          <header className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-2xl space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="px-2.5 py-1 bg-rose-500/15 border border-rose-500/40 text-rose-400 rounded-md text-xs font-black tracking-wider">
-                    IRON DISCIPLINE v2.5
-                  </span>
-                  <h1 className="text-xl md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-amber-200 to-emerald-400">
-                    華爾街量化風控官 × 台股資深籌碼操盤手
-                  </h1>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  鐵律：先算後寫、拒絕基本面凹單、無公開分點數據絕不編造。輸入股號與均價自動聯網抓取 K 線與籌碼。
-                </p>
-              </div>
-
-              {/* 右上角功能按鈕群 */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setColorStyle(prev => (prev === "tw" ? "us" : "tw"))}
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-300 transition"
-                >
-                  {colorStyle === "tw" ? "🇹🇼 台股紅漲綠跌" : "🇺🇸 美股綠漲紅跌"}
-                </button>
-
-                <button
-                  onClick={() => setActiveTab(prev => (prev === "dashboard" ? "markdown" : "dashboard"))}
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-amber-300 transition"
-                >
-                  {activeTab === "dashboard" ? "📄 切換 Markdown 報告" : "📊 返回互動儀表板"}
-                </button>
-
-                <button
-                  onClick={handleSyncAllStocks}
-                  disabled={isSyncingAll}
-                  className="px-3.5 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 rounded-lg text-xs font-bold text-blue-200 transition disabled:opacity-50"
-                >
-                  {isSyncingAll ? "🔄 雲端同步中..." : "🔄 一鍵自動抓取盤後資訊"}
-                </button>
-
-                <button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-bold text-white shadow-lg shadow-emerald-950/60 transition"
-                >
-                  + KEY入庫存 (自動抓價)
-                </button>
-              </div>
-            </div>
-
-            {/* 記憶碼快速貼上還原列 */}
-            <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={snapshotInput}
-                onChange={e => setSnapshotInput(e.target.value)}
-                placeholder="在此貼上上次的 [狀態更新] 記憶碼，一鍵還原庫存並自動抓取今日最新收盤價..."
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
-              />
-              <button
-                onClick={handleParseSnapshot}
-                className="px-4 py-2 bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-300 rounded-lg text-xs font-bold whitespace-nowrap transition"
-              >
-                📥 解析載入並抓價
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm("確定要重置回系統預設的 3 檔範例股票嗎？")) {
-                    setStocks(INITIAL_STOCKS);
-                    setSelectedStockId(INITIAL_STOCKS[0].id);
-                  }
-                }}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-xs transition"
-                title="重置回範例資料"
-              >
-                重置範例
-              </button>
-            </div>
-          </header>
-
-          {/* 動態聯網通知橫幅 */}
-          {syncBannerMsg && (
-            <div className="px-4 py-2.5 bg-blue-950/60 border border-blue-500/40 rounded-xl flex items-center justify-between text-xs text-blue-200">
-              <span>{syncBannerMsg}</span>
-              <button onClick={() => setSyncBannerMsg(null)} className="text-slate-400 hover:text-white ml-4">✕</button>
-            </div>
-          )}
-
-          {/* 新增庫存彈出表單 (極簡輸入 + 自動帶出股名 + 自動聯網抓價) */}
-          {isAddModalOpen && (
-            <form onSubmit={handleAddStockSubmit} className="bg-slate-900 border-2 border-emerald-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
-                  <span>➕</span> KEY 入庫存部位（只需填寫代號、張數、均價，系統自動聯網抓取收盤價與均線）
-                </h3>
-                <button type="button" onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white text-sm">✕ 關閉</button>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">股票代號 *</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="如: 2330, 009816"
-                    value={newForm.code}
-                    onChange={e => {
-                      const codeVal = e.target.value.trim().toUpperCase();
-                      const autoName = stockDict[codeVal] || BUILTIN_STOCK_DIR[codeVal] || "";
-                      setNewForm(prev => ({ ...prev, code: codeVal, name: autoName || prev.name }));
-                    }}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">股名 (選填/自動帶出)</label>
-                  <input
-                    type="text"
-                    placeholder="自動識別或手填"
-                    value={newForm.name}
-                    onChange={e => setNewForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">持有張數 *</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={newForm.lots}
-                    onChange={e => setNewForm(prev => ({ ...prev, lots: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">平均成本 (均價) *</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    placeholder="輸入買進均價"
-                    value={newForm.avgCost}
-                    onChange={e => setNewForm(prev => ({ ...prev, avgCost: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">操作屬性</label>
-                  <select
-                    value={newForm.mode}
-                    onChange={e => setNewForm(prev => ({ ...prev, mode: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-emerald-500 focus:outline-none"
-                  >
-                    <option value="swing">波段 (-8% / 20MA)</option>
-                    <option value="short">短線 (-5% / 10MA)</option>
-                  </select>
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg transition"
-                  >
-                    🚀 儲存並自動抓價
-                  </button>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {activeTab === "markdown" ? (
-            /* Markdown 完整報告檢視模式 */
-            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h2 className="text-base font-bold text-amber-300">📄 標準四大區塊 Markdown 完整輸出報告</h2>
-                <button
-                  onClick={() => handleCopyText(fullMarkdownReport, "md")}
-                  className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded-lg text-xs transition"
-                >
-                  {copiedType === "md" ? "✅ 已複製完整報告！" : "📋 一鍵複製 Markdown"}
-                </button>
-              </div>
-              <pre className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 font-mono whitespace-pre-wrap overflow-x-auto leading-relaxed">
-                {fullMarkdownReport}
-              </pre>
-            </section>
-          ) : (
-            /* 互動式四大區塊主畫面 */
-            <>
-              {/* 📋 一、個人庫存風控儀表板 */}
-              <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-                <div className="px-5 py-3.5 bg-slate-800/60 border-b border-slate-800 flex flex-wrap justify-between items-center gap-2">
-                  <h2 className="text-sm md:text-base font-bold flex items-center gap-2">
-                    <span>📋</span> 一、個人庫存風控儀表板
-                  </h2>
-                  <span className="text-xs text-slate-400">
-                    點擊任一列可切換下方「四維度深度診斷」與「明日操作劇本」
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs md:text-sm">
-                    <thead className="bg-slate-950/90 text-slate-400 border-b border-slate-800">
-                      <tr>
-                        <th className="p-3.5">股號 / 名稱</th>
-                        <th className="p-3.5 text-center">張數</th>
-                        <th className="p-3.5 text-right">平均成本</th>
-                        <th className="p-3.5 text-right">今日收盤</th>
-                        <th className="p-3.5 text-right">期間最高價</th>
-                        <th className="p-3.5 text-right">帳面損益(%)</th>
-                        <th className="p-3.5">目前防守底線 (觸發價)</th>
-                        <th className="p-3.5">系統強制指令</th>
-                        <th className="p-3.5 text-center">操作管理</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/80">
-                      {evaluatedStocks.map(s => {
-                        const isSelected = selectedStock?.id === s.id;
-                        const isSyncingThis = Boolean(fetchingIds[s.id]);
-                        return (
-                          <tr
-                            key={s.id}
-                            onClick={() => setSelectedStockId(s.id)}
-                            className={`cursor-pointer transition ${isSelected ? "bg-slate-800/85" : "hover:bg-slate-800/40"}`}
-                          >
-                            <td className="p-3.5 font-bold text-white">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${s.mode === "short" ? "bg-purple-950/60 text-purple-300 border-purple-500/40" : "bg-slate-800 text-slate-300 border-slate-700"}`}>
-                                  {s.mode === "short" ? "短線" : "波段"}
-                                </span>
-                                <span>{s.code} {s.name}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-normal mt-0.5">
-                                {s.lastSyncedAt} · 評分 {s.totalScore.toFixed(1)}/10
-                              </div>
-                            </td>
-
-                            <td className="p-3.5 text-center font-mono text-slate-200">{s.lots}</td>
-                            <td className="p-3.5 text-right font-mono text-slate-300">{s.avgCost.toFixed(2)}</td>
-                            <td className="p-3.5 text-right font-mono font-bold text-white">{s.todayClose.toFixed(2)}</td>
-                            <td className="p-3.5 text-right font-mono text-amber-300">{s.updatedHigh.toFixed(2)}</td>
-
-                            <td className={`p-3.5 text-right font-mono font-bold ${getPnLColor(s.pnlPct)}`}>
-                              <div>{s.pnlPct >= 0 ? "+" : ""}{s.pnlPct.toFixed(2)}%</div>
-                              <div className="text-[10px] opacity-80">
-                                {s.unrealizedPnL >= 0 ? "+" : ""}{s.unrealizedPnL.toLocaleString()} 元
-                              </div>
-                            </td>
-
-                            <td className="p-3.5">
-                              <div className="font-mono font-bold text-slate-100">{s.defenseLinePrice.toFixed(2)} 元</div>
-                              <div className="text-[10px] text-slate-400">{s.defenseLineLabel}</div>
-                            </td>
-
-                            <td className="p-3.5">
-                              <span className={`inline-block px-2.5 py-1 rounded-md text-xs border ${getCommandBadgeStyle(s.actionBadgeType)}`}>
-                                {s.actionCommand}
-                              </span>
-                            </td>
-
-                            <td className="p-3.5 text-center" onClick={e => e.stopPropagation()}>
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={e => handleSyncSingleStock(s, e)}
-                                  disabled={isSyncingThis}
-                                  className="px-2 py-1 bg-blue-950/70 hover:bg-blue-900 border border-blue-500/40 text-blue-300 rounded text-xs font-semibold transition"
-                                  title="聯網自動抓取最新價格與均線"
-                                >
-                                  {isSyncingThis ? "⏳" : "🔄 抓價"}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedStockId(s.id);
-                                    setIsEditDrawerOpen(true);
-                                  }}
-                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded text-xs transition"
-                                  title="手動補充或微調分點與價格"
-                                >
-                                  ✏️ 微調
-                                </button>
-                                <button
-                                  onClick={e => handleDeleteStock(s.id, s.code, s.name, e)}
-                                  className="px-2 py-1 bg-rose-950/50 hover:bg-rose-900/80 border border-rose-500/30 text-rose-300 rounded text-xs font-semibold transition"
-                                  title="刪除此檔庫存"
-                                >
-                                  🗑️ 刪除
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {evaluatedStocks.length === 0 && (
-                        <tr>
-                          <td colSpan="9" className="p-8 text-center text-slate-500">
-                            目前無任何庫存部位，請點選右上方「+ KEY入庫存 (自動抓價)」新增。
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              {/* 手動微調與補充抽屜 (當使用者想自己改收盤價、均線或補充分點時開啟) */}
-              {isEditDrawerOpen && selectedStock && (
-                <section className="bg-slate-900 border-2 border-amber-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <h3 className="text-sm font-bold text-amber-300">
-                      ✏️ 手動微調與分點補充：【{selectedStock.code} {selectedStock.name}】
-                    </h3>
-                    <button onClick={() => setIsEditDrawerOpen(false)} className="text-xs text-slate-400 hover:text-white">
-                      ✕ 完成關閉
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-7 gap-3 text-xs">
-                    <div>
-                      <label className="text-slate-400 block mb-1">股票名稱</label>
-                      <input
-                        type="text"
-                        value={selectedStock.name}
-                        onChange={e => updateSelectedStockField("name", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">張數</label>
-                      <input
-                        type="number"
-                        step="0.001"
-                        value={selectedStock.lots}
-                        onChange={e => updateSelectedStockField("lots", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">平均成本</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={selectedStock.avgCost}
-                        onChange={e => updateSelectedStockField("avgCost", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">今日收盤價</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={selectedStock.todayClose}
-                        onChange={e => updateSelectedStockField("todayClose", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">期間最高價</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={selectedStock.prevHigh}
-                        onChange={e => updateSelectedStockField("prevHigh", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">5MA / 10MA</label>
-                      <div className="flex gap-1">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={selectedStock.ma5}
-                          onChange={e => updateSelectedStockField("ma5", Number(e.target.value))}
-                          className="w-1/2 bg-slate-950 border border-slate-700 rounded px-1.5 py-1.5 text-white font-mono"
-                          title="5MA"
-                        />
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={selectedStock.ma10}
-                          onChange={e => updateSelectedStockField("ma10", Number(e.target.value))}
-                          className="w-1/2 bg-slate-950 border border-slate-700 rounded px-1.5 py-1.5 text-white font-mono"
-                          title="10MA"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block mb-1">20MA (月線)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={selectedStock.ma20}
-                        onChange={e => updateSelectedStockField("ma20", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 分點與一票否決勾選 */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
-                    <div>
-                      <label className="text-slate-400 block mb-1">當日特定分點 / 主力動向補充 (留空則強制標註查無公開分點)</label>
-                      <input
-                        type="text"
-                        placeholder="例如：凱基台北買超 1,200 張鎖漲停..."
-                        value={selectedStock.branchNote}
-                        onChange={e => {
-                          const val = e.target.value;
-                          updateSelectedStockField("branchNote", val);
-                          updateSelectedStockField("missingBranchData", !val.trim());
-                        }}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-white"
-                      />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-4 pt-4">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-rose-300">
-                        <input
-                          type="checkbox"
-                          checked={selectedStock.vetoMarginSpikeForeignSell}
-                          onChange={e => updateSelectedStockField("vetoMarginSpikeForeignSell", e.target.checked)}
-                        />
-                        <span>融資暴增 + 法人大賣 (一票否決)</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer text-amber-300">
-                        <input
-                          type="checkbox"
-                          checked={selectedStock.vetoDayTraderLockLimitUp}
-                          onChange={e => updateSelectedStockField("vetoDayTraderLockLimitUp", e.target.checked)}
-                        />
-                        <span>隔日沖券商鎖漲停 (一票否決)</span>
-                      </label>
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {/* 🔍 二、個股四維度深度診斷 */}
-              {selectedStock && (
-                <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3.5 gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">🔍</span>
-                      <h2 className="text-sm md:text-base font-bold">
-                        二、個股四維度深度診斷：
-                        <span className="text-amber-300">【{selectedStock.code} {selectedStock.name}】</span>
-                      </h2>
-                      <span className="text-[11px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded">
-                        資料源：{selectedStock.syncSource}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs font-semibold px-3.5 py-1.5 bg-slate-950 border border-slate-700 rounded-full">
-                        多空總評分：
-                        <span className="text-amber-400 text-sm font-black">{selectedStock.totalScore.toFixed(1)}</span> / 10 分
-                        <span className="text-slate-400 ml-1.5 text-[11px]">
-                          (籌碼{selectedStock.chipScore.toFixed(1)} + 技術{selectedStock.techScore.toFixed(1)} + 基本{selectedStock.fundScore.toFixed(1)} + 族群{selectedStock.sectorScore.toFixed(1)})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    {/* 籌碼面 */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between font-bold text-slate-200 border-b border-slate-800 pb-2">
-                        <span>📊 籌碼面透視 (權重 4分)</span>
-                        <span className="text-amber-400 font-mono">{selectedStock.chipScore.toFixed(1)} / 4.0</span>
-                      </div>
-                      <div className="space-y-1.5 text-slate-300 leading-relaxed">
-                        <div>
-                          <span className="text-slate-400 font-semibold">• 法人動向：</span>
-                          {selectedStock.institutionalNote}
-                        </div>
-                        <div>
-                          <span className="text-slate-400 font-semibold">• 資券與借券：</span>
-                          {selectedStock.marginNote}
-                        </div>
-                        <div className="pt-1.5 border-t border-slate-800/80">
-                          <span className="text-slate-400 font-semibold">• 主力/分點：</span>
-                          {selectedStock.missingBranchData || !selectedStock.branchNote?.trim() ? (
-                            <span className="text-amber-300 font-mono font-semibold">
-                              ⚠️ 查無當日公開分點數據，請手動補充
-                            </span>
-                          ) : (
-                            <span className="text-emerald-300">{selectedStock.branchNote}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 技術面 */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between font-bold text-slate-200 border-b border-slate-800 pb-2">
-                        <span>📈 技術面結構 (權重 3分)</span>
-                        <span className="text-amber-400 font-mono">{selectedStock.techScore.toFixed(1)} / 3.0</span>
-                      </div>
-                      <div className="space-y-1.5 font-mono text-slate-300">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">今日收盤 / 最高：</span>
-                          <span className="text-white font-bold">{selectedStock.todayClose.toFixed(2)} / {selectedStock.updatedHigh.toFixed(2)} 元</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">5MA / 10MA：</span>
-                          <span>{selectedStock.ma5.toFixed(2)} / {selectedStock.ma10.toFixed(2)} 元</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">20MA (月線)：</span>
-                          <span className="text-amber-300">{selectedStock.ma20.toFixed(2)} 元</span>
-                        </div>
-                        <div className="pt-1.5 border-t border-slate-800/80 font-sans">
-                          <span className="text-slate-400 font-semibold">位階判定：</span>
-                          {selectedStock.todayClose >= selectedStock.baseMA ? (
-                            <span className="text-emerald-400 font-semibold">
-                              站穩 {selectedStock.baseMALabel} ({selectedStock.baseMA.toFixed(2)}元) 之上，多頭結構有守
-                            </span>
-                          ) : (
-                            <span className="text-rose-400 font-bold">
-                              🚨 收盤跌破 {selectedStock.baseMALabel} ({selectedStock.baseMA.toFixed(2)}元)，技術面轉弱破線！
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 基本面與族群連動 */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between font-bold text-slate-200 border-b border-slate-800 pb-2">
-                        <span>📰 基本面與題材 (權重 3分)</span>
-                        <span className="text-amber-400 font-mono">
-                          {(selectedStock.fundScore + selectedStock.sectorScore).toFixed(1)} / 3.0
-                        </span>
-                      </div>
-                      <p className="text-slate-300 leading-relaxed">
-                        {selectedStock.fundamentalNote}
-                      </p>
-                      <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-rose-300/90">
-                        ⚠️ 系統鐵律：只要觸發技術面破線或資金面 -8% 停損，無論基本面多好、新聞多利多，一律強制執行砍單！
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {/* ⚡ 三、冷酷風控官的明日操作劇本 */}
-              {selectedStock && (
-                <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
-                  <h2 className="text-sm md:text-base font-bold flex items-center gap-2 text-rose-300">
-                    <span>⚡</span> 三、冷酷風控官的明日操作劇本 — 【{selectedStock.code} {selectedStock.name}】
-                  </h2>
-
-                  <div className="p-4 rounded-xl bg-rose-950/35 border border-rose-500/40 text-xs md:text-sm text-rose-100 leading-relaxed">
-                    <strong className="text-rose-400">🧠 紀律當頭棒喝：</strong>
-                    {selectedStock.actionReason}
-                    {selectedStock.pnlPct < 0
-                      ? ` 目前帳面虧損 ${selectedStock.pnlPct.toFixed(2)}%，嚴禁因為「捨不得賣」而把波段單凹成股東！`
-                      : selectedStock.isTrailingActive
-                      ? ` 期間最高曾賺 +${selectedStock.peakGainPct.toFixed(2)}%，動態移動停利已全面激活，跌破 ${selectedStock.defenseLinePrice.toFixed(2)} 元無條件獲利入袋！`
-                      : ` 目前守穩防守底線 ${selectedStock.defenseLinePrice.toFixed(2)} 元，切勿隨盤中雜訊情緒化亂砍或盲目加碼。`}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    <div className="p-4 bg-slate-950/80 border border-emerald-500/30 rounded-xl space-y-1.5">
-                      <div className="font-bold text-emerald-400 text-sm">🟢 強勢進攻 / 續抱條件</div>
-                      <p className="text-slate-300 leading-relaxed">
-                        若明日開盤守穩 5MA (<span className="font-mono font-bold text-emerald-300">{selectedStock.ma5.toFixed(2)} 元</span>) 且帶量突破今日高點 <span className="font-mono font-bold text-emerald-300">{selectedStock.todayHigh.toFixed(2)} 元</span>，代表多方動能延續，紀律續抱讓獲利奔跑。
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-slate-950/80 border border-amber-500/30 rounded-xl space-y-1.5">
-                      <div className="font-bold text-amber-300 text-sm">🟡 逢高調節 / 停利條件</div>
-                      <p className="text-slate-300 leading-relaxed">
-                        若明日衝高至 <span className="font-mono font-bold text-amber-300">{(Math.max(selectedStock.updatedHigh, selectedStock.todayClose * 1.03)).toFixed(2)} 元</span> 附近出現爆量長上影線或隔日沖大舉出貨，強制逢高減碼 1/3 ~ 1/2 鎖住實質獲利。
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-slate-950/80 border border-rose-500/40 rounded-xl space-y-1.5">
-                      <div className="font-bold text-rose-400 text-sm">🔴 鐵血停損 / 清倉條件</div>
-                      <p className="text-slate-200 leading-relaxed">
-                        若盤中或收盤跌破目前防守底線 <span className="font-mono font-black text-rose-400 underline">{selectedStock.defenseLinePrice.toFixed(2)} 元</span> ({selectedStock.defenseLineLabel})，無條件市價砍單清倉，絕不留戀！
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {/* 💾 四、系統狀態記憶碼 (State Snapshot) */}
-              <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-2xl space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xs md:text-sm font-bold text-slate-200 flex items-center gap-2">
-                    <span>💾</span> 四、系統狀態記憶碼 (State Snapshot)
-                  </h2>
-                  <button
-                    onClick={() => handleCopyText(stateSnapshotCode, "snap")}
-                    className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300 transition"
-                  >
-                    {copiedType === "snap" ? "✅ 已複製狀態記憶碼！" : "📋 複製狀態記憶碼"}
-                  </button>
-                </div>
-                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl font-mono text-xs text-amber-200/90 break-all select-all">
-                  {stateSnapshotCode}
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  💡 系統已自動將您的庫存保存在此瀏覽器中；您也可以複製上方記憶碼備份，隨時貼回頂部「解析載入並抓價」瞬間還原。
-                </p>
-              </section>
-            </>
-          )}
-        </div>
-      );
-    }
-
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
-  </script>
-</body>
-</html>
+          // 2. 抓最新單季 EPS (TaiwanStockFinancialStatements) 與 本益比/殖利率 (TaiwanStockPER)
+          let latestEpsStr = "";
+          let latestPeStr = "";
+          try {
+            const fsUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDYear}`;
+            const fsRes = await fetch(fsUrl);
+            if (fsRes.ok) {
+              const fsJson = await fsRes.json();
+              if
