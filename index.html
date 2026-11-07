@@ -1,292 +1,353 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>華爾街量化風控官 × 台股籌碼操盤手系統</title>
-  <!-- 載入 Tailwind CSS (樣式引擎) -->
+  <!-- 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 載入 React 18 與 ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- 載入 Babel 用於即時編譯 React 語法 -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-4 md:p-6 selection:bg-amber-500 selection:text-slate-900">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
   
-  <!-- 系統掛載點 -->
-  <div id="app" class="max-w-7xl mx-auto space-y-6"></div>
+  <div id="root"></div>
 
-  <!-- 核心邏輯與渲染引擎 -->
-  <script>
-    // --- 1. 初始資料與狀態管理 ---
-    const INITIAL_STOCKS = [
-      { id: "2330", code: "2330", name: "台積電", shares: 2, cost: 980.0, highPrice: 1095.0, closePrice: 1070.0, ma5: 1060.0, ma10: 1045.0, ma20: 1025.0, type: "波段", foreignBuy: "+12,450張 (連3買)", trustBuy: "+1,230張 (連5買)", marginChange: "-1,820張", borrowShortChange: "-4,100張 (空方回補)", keyBroker: "⚠️ 查無當日公開分點數據", isTopBrokerWarning: false, newsNote: "先進製程稼動率維持高檔，AI 晶片長期營運展望強勁。", scores: { chip: 3.8, tech: 2.8, fund: 2.0, sector: 1.0 } },
-      { id: "3017", code: "3017", name: "奇鋐", shares: 3, cost: 650.0, highPrice: 685.0, closePrice: 595.0, ma5: 610.0, ma10: 625.0, ma20: 620.0, type: "波段", foreignBuy: "-4,200張 (土洋對作)", trustBuy: "-1,150張 (轉賣)", marginChange: "+3,450張 (散戶接刀)", borrowShortChange: "+1,500張 (空方加壓)", keyBroker: "特定主力與短線隔日沖大舉出脫", isTopBrokerWarning: true, newsNote: "GB200 水冷出貨加速，但技術面高檔失守月線引發多殺多。", scores: { chip: 1.0, tech: 0.8, fund: 1.8, sector: 0.5 } },
-      { id: "2317", code: "2317", name: "鴻海", shares: 5, cost: 185.0, highPrice: 206.0, closePrice: 198.0, ma5: 199.0, ma10: 196.0, ma20: 192.0, type: "波段", foreignBuy: "+8,900張 (外資買超)", trustBuy: "+560張", marginChange: "-850張", borrowShortChange: "-1,200張", keyBroker: "⚠️ 查無當日公開分點數據", isTopBrokerWarning: false, newsNote: "AI 伺服器機櫃量產出貨中，月線支撐強勁。", scores: { chip: 3.2, tech: 2.2, fund: 1.8, sector: 0.8 } }
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    // 初始示範部位資料
+    const INITIAL_PORTFOLIO = [
+      {
+        id: "2330",
+        code: "2330",
+        name: "台積電",
+        shares: 2,
+        cost: 980.0,
+        highPrice: 1095.0,
+        closePrice: 1070.0,
+        ma5: 1060.0,
+        ma10: 1045.0,
+        ma20: 1025.0,
+        type: "波段",
+        foreignBuy: "+12,450張 (連3買)",
+        trustBuy: "+1,230張 (連5買)",
+        marginChange: "-1,820張",
+        borrowShortChange: "-4,100張 (空方回補)",
+        keyBroker: "⚠️ 查無當日公開分點數據，請手動補充",
+        isTopBrokerWarning: false,
+        newsNote: "先進製程稼動率滿載，AI 晶片需求持續推升獲利展望，基本面極度強勁。",
+        scores: { chip: 3.8, tech: 2.8, fund: 2.0, sector: 1.0 }
+      },
+      {
+        id: "3017",
+        code: "3017",
+        name: "奇鋐",
+        shares: 3,
+        cost: 650.0,
+        highPrice: 685.0,
+        closePrice: 595.0,
+        ma5: 610.0,
+        ma10: 625.0,
+        ma20: 620.0,
+        type: "波段",
+        foreignBuy: "-4,200張 (土洋對作)",
+        trustBuy: "-1,150張 (轉賣)",
+        marginChange: "+3,450張 (散戶進場接刀)",
+        borrowShortChange: "+1,500張 (空方加壓)",
+        keyBroker: "特定分點與外資大單出貨",
+        isTopBrokerWarning: true,
+        newsNote: "GB200 水冷零組件進入放量期，但短線出現高檔利多出盡賣壓。",
+        scores: { chip: 1.0, tech: 0.8, fund: 1.8, sector: 0.5 }
+      },
+      {
+        id: "2317",
+        code: "2317",
+        name: "鴻海",
+        shares: 5,
+        cost: 185.0,
+        highPrice: 206.0,
+        closePrice: 198.0,
+        ma5: 199.0,
+        ma10: 196.0,
+        ma20: 192.0,
+        type: "波段",
+        foreignBuy: "+8,900張 (連2買)",
+        trustBuy: "+560張",
+        marginChange: "-850張",
+        borrowShortChange: "-1,200張",
+        keyBroker: "⚠️ 查無當日公開分點數據，請手動補充",
+        isTopBrokerWarning: false,
+        newsNote: "伺服器組裝第四季出貨動能加溫，法人預期營運雙位數季增。",
+        scores: { chip: 3.2, tech: 2.2, fund: 1.8, sector: 0.8 }
+      }
     ];
 
-    let state = {
-      stocks: JSON.parse(JSON.stringify(INITIAL_STOCKS)),
-      selectedId: "2330",
-      showAddForm: false,
-      isSyncing: false,
-      copyBtnText: "📋 複製記憶碼"
-    };
-
-    // --- 2. 核心風控演算法 ---
-    function getProcessedData() {
-      return state.stocks.map(s => {
-        const pnlPct = ((s.closePrice - s.cost) / s.cost) * 100;
-        const updatedHigh = Math.max(s.highPrice || s.cost, s.closePrice);
-        const maxGainPct = ((updatedHigh - s.cost) / s.cost) * 100;
-        const isShort = s.type === "短線";
-
-        const hardLossPct = isShort ? -5 : -8;
-        const hardLossPrice = s.cost * (1 + hardLossPct / 100);
-        const maBenchmark = isShort ? s.ma10 : s.ma20;
-        const maBreakThreshold = maBenchmark * 0.97; 
-
-        let defensePrice = Math.max(hardLossPrice, maBenchmark);
-        let defenseType = "硬性停損";
-
-        if (maxGainPct >= 15) {
-          defensePrice = updatedHigh * 0.95;
-          defenseType = "動態移動停利 (-5%)";
-        } else if (maxGainPct >= 8) {
-          defensePrice = Math.max(s.cost * 1.01, hardLossPrice);
-          defenseType = "保本防守線 (+1%)";
-        }
-
-        let instruction = "續抱";
-        let badgeClass = "text-emerald-400 border-emerald-500/30 bg-emerald-950/40";
-        let icon = "🛡️";
-
-        if (pnlPct <= hardLossPct || s.closePrice < maBreakThreshold) {
-          instruction = "🚨 觸價停損";
-          badgeClass = "text-rose-400 border-rose-500/50 bg-rose-950/70 font-bold animate-pulse";
-          icon = "🚨";
-        } else if (maxGainPct >= 15 && s.closePrice <= defensePrice) {
-          instruction = "💰 移動停利觸發";
-          badgeClass = "text-amber-300 border-amber-500/50 bg-amber-950/60 font-bold";
-          icon = "💰";
-        } else if (s.isTopBrokerWarning) {
-          instruction = "⚠️ 籌碼敗壞減碼";
-          badgeClass = "text-orange-400 border-orange-500/50 bg-orange-950/60 font-bold";
-          icon = "⚠️";
-        }
-
-        const totalScore = (s.scores.chip + s.scores.tech + s.scores.fund + s.scores.sector).toFixed(1);
-
-        return { ...s, pnlPct, updatedHigh, defensePrice, defenseType, instruction, badgeClass, icon, totalScore };
+    function App() {
+      const [portfolio, setPortfolio] = useState(INITIAL_PORTFOLIO);
+      const [selectedId, setSelectedId] = useState(INITIAL_PORTFOLIO[0].id);
+      const [copied, setCopied] = useState(false);
+      const [isAdding, setIsAdding] = useState(false);
+      const [isFetching, setIsFetching] = useState(false);
+      const [newStock, setNewStock] = useState({
+        code: "", name: "", shares: 1, cost: 100, highPrice: 100, type: "波段"
       });
-    }
 
-    // --- 3. 全域按鈕觸發事件 ---
-    window.toggleAddForm = () => {
-      state.showAddForm = !state.showAddForm;
-      renderApp();
-    };
+      // 風控演算法計算
+      const processedPortfolio = useMemo(() => {
+        return portfolio.map(stock => {
+          const pnlPct = ((stock.closePrice - stock.cost) / stock.cost) * 100;
+          const updatedHigh = Math.max(stock.highPrice || stock.cost, stock.closePrice);
+          const maxGainPct = ((updatedHigh - stock.cost) / stock.cost) * 100;
+          const isShort = stock.type === "短線";
 
-    window.selectStock = (id) => {
-      state.selectedId = id;
-      renderApp();
-    };
+          const hardLossPct = isShort ? -5 : -8;
+          const hardLossPrice = stock.cost * (1 + hardLossPct / 100);
+          const maBenchmark = isShort ? stock.ma10 : stock.ma20;
+          const maThresholdPrice = maBenchmark * 0.97;
 
-    window.syncMarketData = () => {
-      state.isSyncing = true;
-      renderApp(); // 更新按鈕為 Loading 狀態
-      
-      setTimeout(() => {
-        state.stocks.forEach(s => {
-          const fluc = (Math.random() - 0.48) * 0.015;
-          s.closePrice = Number((s.closePrice * (1 + fluc)).toFixed(1));
-          s.highPrice = Math.max(s.highPrice, s.closePrice);
+          let defensePrice = Math.max(hardLossPrice, maBenchmark);
+          let defenseType = "硬性停損";
+
+          if (maxGainPct >= 15) {
+            defensePrice = updatedHigh * 0.95;
+            defenseType = "動態移動停利 (-5%)";
+          } else if (maxGainPct >= 8) {
+            defensePrice = Math.max(stock.cost * 1.01, hardLossPrice);
+            defenseType = "保本防守線 (+1%)";
+          }
+
+          let instruction = "續抱";
+          let instructionClass = "text-emerald-400 border-emerald-500/30 bg-emerald-950/40";
+          let instructionIcon = "🛡️";
+
+          if (pnlPct <= hardLossPct || stock.closePrice < maThresholdPrice) {
+            instruction = "🚨 觸價停損";
+            instructionClass = "text-rose-400 border-rose-500/50 bg-rose-950/60 font-bold animate-pulse";
+            instructionIcon = "🚨";
+          } else if (maxGainPct >= 15 && stock.closePrice <= defensePrice) {
+            instruction = "💰 移動停利觸發";
+            instructionClass = "text-amber-300 border-amber-500/50 bg-amber-950/50 font-bold";
+            instructionIcon = "💰";
+          } else if (stock.isTopBrokerWarning) {
+            instruction = "⚠️ 籌碼敗壞減碼";
+            instructionClass = "text-orange-400 border-orange-500/50 bg-orange-950/50 font-bold";
+            instructionIcon = "⚠️";
+          }
+
+          const totalScore = stock.scores 
+            ? (stock.scores.chip + stock.scores.tech + stock.scores.fund + stock.scores.sector).toFixed(1)
+            : "5.0";
+
+          return { ...stock, pnlPct, updatedHigh, defensePrice, defenseType, instruction, instructionClass, instructionIcon, totalScore };
         });
-        state.isSyncing = false;
-        renderApp();
-        alert("盤後數據已同步完成！");
-      }, 600);
-    };
+      }, [portfolio]);
 
-    window.submitAddStock = (event) => {
-      event.preventDefault();
-      const code = document.getElementById('new-code').value.trim();
-      const name = document.getElementById('new-name').value.trim();
-      const shares = Number(document.getElementById('new-shares').value) || 1;
-      const cost = Number(document.getElementById('new-cost').value) || 100;
-      const high = Number(document.getElementById('new-high').value) || cost;
-      
-      if(!code || !name) return alert("請輸入股號與名稱");
+      const currentStock = processedPortfolio.find(s => s.id === selectedId) || processedPortfolio[0];
 
-      const newItem = {
-        id: code + Date.now(), code, name, shares, cost, highPrice: high, closePrice: cost,
-        ma5: cost * 0.99, ma10: cost * 0.98, ma20: cost * 0.96, type: "波段",
-        foreignBuy: "+0張", trustBuy: "+0張", marginChange: "+0張", borrowShortChange: "+0張",
-        keyBroker: "⚠️ 查無當日公開分點數據，請手動補充", isTopBrokerWarning: false,
-        newsNote: "新登錄部位，等待盤後自動檢索。", scores: { chip: 2.5, tech: 2.0, fund: 1.5, sector: 0.5 }
+      // 產生記憶碼
+      const stateSnapshotCode = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, "/");
+        const items = processedPortfolio.map(s => 
+          `{${s.code}_${s.name}, 張數:${s.shares}, 成本:${s.cost.toFixed(1)}, 期間最高:${s.updatedHigh.toFixed(1)}, 屬性:${s.type}}`
+        ).join(", ");
+        return `[狀態更新] 日期: ${today} | 庫存: ${items}`;
+      }, [processedPortfolio]);
+
+      const handleCopyCode = () => {
+        navigator.clipboard.writeText(stateSnapshotCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       };
 
-      state.stocks.push(newItem);
-      state.selectedId = newItem.id;
-      state.showAddForm = false;
-      renderApp();
-    };
-
-    window.copySnapshot = () => {
-      const text = document.getElementById("snapshot-text").innerText;
-      navigator.clipboard.writeText(text).then(() => {
-        state.copyBtnText = "✅ 已複製！";
-        renderApp();
+      // 模擬更新
+      const handleFetchMarketData = () => {
+        setIsFetching(true);
         setTimeout(() => {
-          state.copyBtnText = "📋 複製記憶碼";
-          renderApp();
-        }, 2000);
-      });
-    };
+          setPortfolio(prev => prev.map(s => {
+            const randomFluc = (Math.random() - 0.48) * 0.02;
+            const newClose = Number((s.closePrice * (1 + randomFluc)).toFixed(1));
+            return { ...s, closePrice: newClose, highPrice: Math.max(s.highPrice, newClose) };
+          }));
+          setIsFetching(false);
+          alert("盤後數據已自動同步更新完成！");
+        }, 800);
+      };
 
-    // --- 4. 畫面渲染引擎 (保證資料與畫面同步) ---
-    function renderApp() {
-      const processed = getProcessedData();
-      const active = processed.find(s => s.id === state.selectedId) || processed[0];
-      
-      const appDiv = document.getElementById('app');
-      
-      appDiv.innerHTML = `
-        <!-- 頁頭 -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <span class="text-2xl">⚖️</span>
-              <h1 class="text-xl md:text-2xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-amber-200 to-emerald-400">
-                華爾街量化風控官 × 台股籌碼操盤手系統
-              </h1>
+      const handleAddStock = (e) => {
+        e.preventDefault();
+        const baseCost = Number(newStock.cost);
+        const newItem = {
+          id: newStock.code || String(Date.now()),
+          code: newStock.code || "0000",
+          name: newStock.name || "新標的",
+          shares: Number(newStock.shares) || 1,
+          cost: baseCost,
+          highPrice: Number(newStock.highPrice) || baseCost,
+          closePrice: baseCost,
+          ma5: Number((baseCost * 0.99).toFixed(1)),
+          ma10: Number((baseCost * 0.98).toFixed(1)),
+          ma20: Number((baseCost * 0.96).toFixed(1)),
+          type: newStock.type || "波段",
+          foreignBuy: "+0張", trustBuy: "+0張", marginChange: "+0張", borrowShortChange: "+0張",
+          keyBroker: "⚠️ 查無當日公開分點數據，請手動補充",
+          isTopBrokerWarning: false,
+          newsNote: "手動登錄之持股部位，待盤後自動更新數據。",
+          scores: { chip: 2.5, tech: 2.0, fund: 1.5, sector: 0.5 }
+        };
+        setPortfolio(prev => [...prev, newItem]);
+        setSelectedId(newItem.id);
+        setIsAdding(false);
+        setNewStock({ code: "", name: "", shares: 1, cost: 100, highPrice: 100, type: "波段" });
+      };
+
+      return (
+        <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+            <div>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">⚖️</span>
+                <h1 className="text-xl md:text-2xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-amber-200 to-emerald-400">
+                  華爾街量化風控官 × 台股籌碼操盤手系統
+                </h1>
+              </div>
+              <p className="text-xs md:text-sm text-slate-400 mt-1">
+                「極度理性、鐵血無情」— 嚴格克服捨不得賣、凹單、抱上抱下之人性弱點。
+              </p>
             </div>
-            <p class="text-xs md:text-sm text-slate-400 mt-1">以極度理性、鐵血無情的紀律，克服「捨不得賣、凹單、抱上抱下」的人性弱點。</p>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleFetchMarketData}
+                disabled={isFetching}
+                className="px-4 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-lg text-sm font-semibold text-blue-200 transition"
+              >
+                {isFetching ? "🔄 抓取中..." : "🔄 盤後數據自動更新"}
+              </button>
+              <button 
+                onClick={() => setIsAdding(!isAdding)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white shadow-lg shadow-emerald-950 transition"
+              >
+                {isAdding ? "取消輸入" : "+ KEY入新庫存"}
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-2">
-            <button onclick="window.syncMarketData()" class="px-3.5 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-lg text-xs font-semibold text-blue-200 transition">
-              ${state.isSyncing ? '🔄 盤後數據同步中...' : '🔄 自動更新盤後行情'}
-            </button>
-            <button onclick="window.toggleAddForm()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-semibold text-white shadow-lg transition">
-              ${state.showAddForm ? '關閉輸入' : '+ KEY入持股部位'}
-            </button>
-          </div>
-        </div>
 
-        <!-- 新增表單 -->
-        ${state.showAddForm ? `
-        <form onsubmit="window.submitAddStock(event)" class="bg-slate-900 border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-6 gap-3 text-xs shadow-2xl">
-          <div><label class="text-slate-400 block mb-1">股票代號</label><input id="new-code" required type="text" placeholder="如 2330" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" /></div>
-          <div><label class="text-slate-400 block mb-1">股票名稱</label><input id="new-name" required type="text" placeholder="如 台積電" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" /></div>
-          <div><label class="text-slate-400 block mb-1">持有張數</label><input id="new-shares" required type="number" step="1" value="1" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" /></div>
-          <div><label class="text-slate-400 block mb-1">平均成本</label><input id="new-cost" required type="number" step="0.1" value="100" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" /></div>
-          <div><label class="text-slate-400 block mb-1">期間最高價</label><input id="new-high" required type="number" step="0.1" value="100" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" /></div>
-          <div class="flex items-end"><button type="submit" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded font-bold text-white transition">儲存加入</button></div>
-        </form>
-        ` : ''}
+          {/* 新增表單 */}
+          {isAdding && (
+            <form onSubmit={handleAddStock} className="bg-slate-900 border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
+              <div><label className="text-xs text-slate-400 block mb-1">股票代號</label><input required type="text" className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs" value={newStock.code} onChange={e => setNewStock({...newStock, code: e.target.value})} /></div>
+              <div><label className="text-xs text-slate-400 block mb-1">股票名稱</label><input required type="text" className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs" value={newStock.name} onChange={e => setNewStock({...newStock, name: e.target.value})} /></div>
+              <div><label className="text-xs text-slate-400 block mb-1">持有張數</label><input required type="number" step="1" className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs" value={newStock.shares} onChange={e => setNewStock({...newStock, shares: e.target.value})} /></div>
+              <div><label className="text-xs text-slate-400 block mb-1">平均成本</label><input required type="number" step="0.1" className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs" value={newStock.cost} onChange={e => setNewStock({...newStock, cost: e.target.value, highPrice: Math.max(e.target.value, newStock.highPrice)})} /></div>
+              <div><label className="text-xs text-slate-400 block mb-1">期間最高價</label><input required type="number" step="0.1" className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs" value={newStock.highPrice} onChange={e => setNewStock({...newStock, highPrice: e.target.value})} /></div>
+              <div className="flex items-end"><button type="submit" className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold text-white">確認新增</button></div>
+            </form>
+          )}
 
-        <!-- 一、儀表板表格 -->
-        <section class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
-          <div class="px-5 py-3.5 bg-slate-800/70 border-b border-slate-800 flex justify-between items-center">
-            <h2 class="text-sm md:text-base font-bold flex items-center gap-2"><span>📋</span> 一、個人庫存風控儀表板</h2>
-            <span class="text-xs text-slate-400">點選該列切換下方深度診斷</span>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs md:text-sm">
-              <thead class="bg-slate-950 text-slate-400 border-b border-slate-800">
-                <tr>
-                  <th class="p-3">股號/名稱</th><th class="p-3">張數</th><th class="p-3">平均成本</th><th class="p-3">今日收盤</th>
-                  <th class="p-3">期間最高價</th><th class="p-3">帳面損益(%)</th><th class="p-3">目前防守底線 (觸發價)</th><th class="p-3">系統強制指令</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-800">
-                ${processed.map(s => `
-                  <tr onclick="window.selectStock('${s.id}')" class="cursor-pointer transition-colors ${s.id === active.id ? 'bg-slate-800/90' : 'hover:bg-slate-800/40'}">
-                    <td class="p-3 font-semibold text-white flex items-center gap-1.5"><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">${s.type}</span><span>${s.code} ${s.name}</span></td>
-                    <td class="p-3 text-slate-300 font-mono">${s.shares} 張</td>
-                    <td class="p-3 text-slate-300 font-mono">${s.cost.toFixed(1)}</td>
-                    <td class="p-3 font-mono font-bold text-white">${s.closePrice.toFixed(1)}</td>
-                    <td class="p-3 text-amber-300 font-mono">${s.updatedHigh.toFixed(1)}</td>
-                    <td class="p-3 font-mono font-bold ${s.pnlPct >= 0 ? 'text-red-400' : 'text-emerald-400'}">${s.pnlPct >= 0 ? '+' : ''}${s.pnlPct.toFixed(2)}%</td>
-                    <td class="p-3"><div class="text-xs font-mono font-semibold text-slate-100">${s.defensePrice.toFixed(1)} 元</div><div class="text-[10px] text-slate-400">${s.defenseType}</div></td>
-                    <td class="p-3"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${s.badgeClass}"><span>${s.icon}</span><span>${s.instruction}</span></span></td>
+          {/* 儀表板 */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+            <div className="px-5 py-3.5 bg-slate-800/60 border-b border-slate-800 flex justify-between items-center">
+              <h2 className="text-sm md:text-base font-bold flex items-center gap-2"><span>📋</span> 一、個人庫存風控儀表板</h2>
+              <span className="text-xs text-slate-400">點擊列以切換下方診斷</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs md:text-sm">
+                <thead className="bg-slate-950/70 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">股號/名稱</th><th className="p-3">張數</th><th className="p-3">平均成本</th><th class="p-3">今日收盤</th>
+                    <th className="p-3">期間最高</th><th className="p-3">帳面損益(%)</th><th className="p-3">防守底線 (觸發價)</th><th className="p-3">系統強制指令</th>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- 二、深度診斷 -->
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2">
-            <h2 class="text-sm md:text-base font-bold flex items-center gap-2">
-              <span>🔍</span> 二、個股四維度深度診斷：<span class="text-amber-300">【${active.code} ${active.name}】</span>
-            </h2>
-            <div class="text-xs font-semibold px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-slate-200">
-              多空總評分：<span class="text-amber-400 text-sm font-black">${active.totalScore}</span> / 10 分
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {processedPortfolio.map(s => {
+                    const isSelected = s.id === currentStock.id;
+                    const isProfit = s.pnlPct >= 0;
+                    return (
+                      <tr key={s.id} onClick={() => setSelectedId(s.id)} className={`cursor-pointer transition-colors ${isSelected ? 'bg-slate-800/80' : 'hover:bg-slate-800/40'}`}>
+                        <td className="p-3 font-semibold text-white flex items-center gap-1.5"><span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">{s.type}</span><span>{s.code} {s.name}</span></td>
+                        <td className="p-3 text-slate-300">{s.shares} 張</td>
+                        <td className="p-3 text-slate-300">{s.cost.toFixed(1)}</td>
+                        <td className="p-3 font-mono font-bold text-white">{s.closePrice.toFixed(1)}</td>
+                        <td className="p-3 text-amber-300 font-mono">{s.updatedHigh.toFixed(1)}</td>
+                        <td className={`p-3 font-mono font-bold ${isProfit ? 'text-red-400' : 'text-emerald-400'}`}>{isProfit ? `+${s.pnlPct.toFixed(2)}%` : `${s.pnlPct.toFixed(2)}%`}</td>
+                        <td className="p-3"><div className="text-xs font-mono font-semibold text-slate-200">{s.defensePrice.toFixed(1)} 元</div><div className="text-[10px] text-slate-400">{s.defenseType}</div></td>
+                        <td className="p-3"><span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${s.instructionClass}`}><span>{s.instructionIcon}</span><span>{s.instruction}</span></span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- 籌碼 -->
-            <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-              <div class="font-bold text-slate-200 flex items-center justify-between"><span>📊 籌碼面透視</span><span class="text-amber-400 font-mono">得分: ${active.scores.chip} / 4.0</span></div>
-              <div class="text-slate-400 space-y-1">
-                <div>外資買賣超：<span class="text-slate-200">${active.foreignBuy}</span></div><div>投信買賣超：<span class="text-slate-200">${active.trustBuy}</span></div>
-                <div>資券變化：<span class="text-slate-200">${active.marginChange}</span></div><div>借券變化：<span class="text-slate-200">${active.borrowShortChange}</span></div>
-                <div class="pt-1 text-[11px] border-t border-slate-800 text-amber-200/90 font-mono">主力分點：${active.keyBroker}</div>
+          </section>
+
+          {/* 診斷區 */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2">
+              <h2 className="text-sm md:text-base font-bold flex items-center gap-2">
+                <span>🔍</span> 二、個股四維度深度診斷：<span className="text-amber-300">【{currentStock.code} {currentStock.name}】</span>
+              </h2>
+              <div className="text-xs font-semibold px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-slate-200">
+                多空總評分：<span className="text-amber-400 text-sm font-black">{currentStock.totalScore}</span> / 10 分
               </div>
             </div>
-            <!-- 技術 -->
-            <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-              <div class="font-bold text-slate-200 flex items-center justify-between"><span>📈 技術面結構</span><span class="text-amber-400 font-mono">得分: ${active.scores.tech} / 3.0</span></div>
-              <div class="text-slate-400 space-y-1 font-mono">
-                <div>今日收盤：<span class="font-bold text-white">${active.closePrice.toFixed(1)}</span> 元</div>
-                <div>5MA: ${active.ma5.toFixed(1)} | 10MA: ${active.ma10.toFixed(1)}</div>
-                <div>20MA (月線): ${active.ma20.toFixed(1)} 元</div>
-                <div class="pt-1 text-[11px] border-t border-slate-800 text-slate-300">位階評估：${active.closePrice >= active.ma20 ? '月線之上多頭掌控' : '🚨 跌破月線轉弱'}</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3.5 space-y-2 text-xs">
+                <div className="font-bold text-slate-200 flex items-center justify-between"><span>📊 籌碼面透視</span><span className="text-amber-400 font-mono">得分: {currentStock.scores?.chip} / 4.0</span></div>
+                <div className="text-slate-400 space-y-1">
+                  <div>外資動向：<span className="text-slate-200">{currentStock.foreignBuy}</span></div><div>投信動向：<span className="text-slate-200">{currentStock.trustBuy}</span></div>
+                  <div>資券變化：<span className="text-slate-200">{currentStock.marginChange}</span></div><div>借券變化：<span className="text-slate-200">{currentStock.borrowShortChange}</span></div>
+                  <div className="pt-1 text-[11px] border-t border-slate-800 text-amber-200/90 font-mono">主力分點：{currentStock.keyBroker}</div>
+                </div>
+              </div>
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3.5 space-y-2 text-xs">
+                <div className="font-bold text-slate-200 flex items-center justify-between"><span>📈 技術面結構</span><span className="text-amber-400 font-mono">得分: {currentStock.scores?.tech} / 3.0</span></div>
+                <div className="text-slate-400 space-y-1 font-mono">
+                  <div>收盤位階：{currentStock.closePrice.toFixed(1)} 元</div>
+                  <div>5MA: {currentStock.ma5.toFixed(1)} | 10MA: {currentStock.ma10.toFixed(1)}</div>
+                  <div>20MA (月線): {currentStock.ma20.toFixed(1)} 元</div>
+                  <div className="pt-1 text-[11px] border-t border-slate-800 text-slate-300">多空均線：{currentStock.closePrice >= currentStock.ma20 ? "月線之上多方控盤" : "🚨 跌破月線轉弱"}</div>
+                </div>
+              </div>
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3.5 space-y-2 text-xs">
+                <div className="font-bold text-slate-200 flex items-center justify-between"><span>📰 基本面與意圖拆解</span><span className="text-amber-400 font-mono">得分: {(currentStock.scores?.fund + currentStock.scores?.sector).toFixed(1)} / 3.0</span></div>
+                <p className="text-slate-300 leading-relaxed text-[11px]">{currentStock.newsNote}</p>
+                <div className="text-[11px] text-rose-300/80 pt-1 border-t border-slate-800">⚠️ 操盤手告誡：利多若不漲或爆量收黑，為主力出貨典型訊號，絕不可以基本面凹單！</div>
               </div>
             </div>
-            <!-- 基本面 -->
-            <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-              <div class="font-bold text-slate-200 flex items-center justify-between"><span>📰 基本面與意圖拆解</span><span class="text-amber-400 font-mono">得分: ${(active.scores.fund + active.scores.sector).toFixed(1)} / 3.0</span></div>
-              <p class="text-slate-300 leading-relaxed text-[11px]">${active.newsNote}</p>
-              <div class="text-[11px] text-rose-300/90 pt-1 border-t border-slate-800">⚠️ 操盤手告誡：若出現利多長黑，為主力倒貨訊號，拒絕基本面凹單！</div>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <!-- 三、操作劇本 -->
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-3">
-          <h2 class="text-sm md:text-base font-bold flex items-center gap-2 text-rose-300"><span>⚡</span> 三、冷酷風控官的明日操作劇本</h2>
-          <div class="p-3.5 rounded-lg bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs leading-relaxed">
-            <strong class="text-rose-400">🧠 紀律當頭棒喝：</strong>
-            ${active.pnlPct < -5 ? `你目前虧損達 ${active.pnlPct.toFixed(1)}%！市場從不憐憫猶豫不決的人，破線破價無條件砍單，嚴禁向下攤平！` : active.pnlPct >= 15 ? `獲利已達 +${active.pnlPct.toFixed(1)}%！移動停利防守價鎖定在 ${active.defensePrice.toFixed(1)} 元，回測觸價立即收割，防抱上抱下！` : `獲利或整理格局中，守好保本線與月線，未破之前耐心抱牢！`}
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
-            <div class="p-3 bg-slate-950/70 border border-emerald-500/20 rounded-lg space-y-1">
-              <div class="font-bold text-emerald-400">🟢 強勢續抱條件</div><div class="text-slate-400 leading-normal">明日收盤守穩 <span class="text-emerald-300 font-mono font-bold">${active.ma5.toFixed(1)} 元</span>，續抱享受波段利潤。</div>
+          {/* 劇本區 */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-3">
+            <h2 className="text-sm md:text-base font-bold flex items-center gap-2 text-rose-300"><span>⚡</span> 三、冷酷風控官的明日操作劇本</h2>
+            <div className="p-3.5 rounded-lg bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs leading-relaxed">
+              <strong className="text-rose-400">🧠 紀律當頭棒喝：</strong>
+              {currentStock.pnlPct < -5 ? ` 你目前虧損達 ${currentStock.pnlPct.toFixed(1)}%！市場從不同情留戀的人，破線就砍，絕不可加碼攤平！` : currentStock.pnlPct >= 15 ? ` 獲利已拉開至 +${currentStock.pnlPct.toFixed(1)}%，但切勿自滿！動態移動停利已設在 ${currentStock.defensePrice.toFixed(1)} 元，回落無條件收割！` : ` 獲利或震盪中，守穩保本線與月線 (${currentStock.ma20.toFixed(1)} 元)，未破之前耐心抱好！`}
             </div>
-            <div class="p-3 bg-slate-950/70 border border-amber-500/20 rounded-lg space-y-1">
-              <div class="font-bold text-amber-300">🟡 逢高調節條件</div><div class="text-slate-400 leading-normal">若盤中拉高碰觸前高但爆出巨量長上影線，逢高減碼 1/3 ~ 1/2。</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
+              <div className="p-3 bg-slate-950/70 border border-emerald-500/20 rounded-lg space-y-1"><div className="font-bold text-emerald-400">🟢 強勢續抱條件</div><div className="text-slate-400 leading-normal">明日收盤守穩 <span className="text-emerald-300 font-mono font-bold">{currentStock.ma5.toFixed(1)} 元</span> 且成交量維持常態，續抱享受波段利潤。</div></div>
+              <div className="p-3 bg-slate-950/70 border border-amber-500/20 rounded-lg space-y-1"><div className="font-bold text-amber-300">🟡 逢高調節條件</div><div className="text-slate-400 leading-normal">若盤中強拉碰觸壓力區但爆出近5日均量 2 倍長上影線，逢高減碼。</div></div>
+              <div className="p-3 bg-slate-950/70 border border-rose-500/30 rounded-lg space-y-1"><div className="font-bold text-rose-400">🔴 鐵血停損/停利條件</div><div className="text-slate-300 leading-normal">只要盤中觸碰或收盤跌破 <span className="text-rose-400 font-mono font-bold">{currentStock.defensePrice.toFixed(1)} 元</span>，無條件市價清倉，不聽任何理由！</div></div>
             </div>
-            <div class="p-3 bg-slate-950/70 border border-rose-500/30 rounded-lg space-y-1">
-              <div class="font-bold text-rose-400">🔴 鐵血停損/停利條件</div><div class="text-slate-300 leading-normal">只要盤中觸碰或收盤跌破 <span class="text-rose-400 font-mono font-bold">${active.defensePrice.toFixed(1)} 元</span>，無條件市價清倉，絕不猶豫！</div>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <!-- 四、記憶碼 -->
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl space-y-2">
-          <div class="flex items-center justify-between">
-            <h2 class="text-xs font-bold text-slate-300 flex items-center gap-1.5"><span>💾</span> 四、系統狀態記憶碼 (State Snapshot)</h2>
-            <button onclick="window.copySnapshot()" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-amber-300 transition">${state.copyBtnText}</button>
-          </div>
-          <div id="snapshot-text" class="p-2.5 bg-slate-950 border border-slate-800 rounded font-mono text-[11px] text-slate-300 break-all select-all">
-            [狀態更新] 日期: ${new Date().toISOString().slice(0,10).replace(/-/g,'/')} | 庫存: ${processed.map(s => `{${s.code}_${s.name}, 張數:${s.shares}, 成本:${s.cost.toFixed(1)}, 期間最高:${s.updatedHigh.toFixed(1)}, 屬性:${s.type}}`).join(", ")}
-          </div>
-        </section>
-      `;
+          {/* 記憶碼 */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold text-slate-300 flex items-center gap-1.5"><span>💾</span> 四、系統狀態記憶碼</h2>
+              <button onClick={handleCopyCode} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-amber-300 transition">{copied ? "✅ 已複製！" : "📋 複製記憶碼"}</button>
+            </div>
+            <div className="p-2.5 bg-slate-950 border border-slate-800 rounded font-mono text-[11px] text-slate-300 break-all select-all">{stateSnapshotCode}</div>
+          </section>
+        </div>
+      );
     }
 
-    // --- 5. 啟動應用程式 ---
-    renderApp();
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
   </script>
 </body>
 </html>
