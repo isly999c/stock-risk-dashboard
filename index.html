@@ -4,214 +4,110 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>華爾街量化風控官 × 台股籌碼操盤手系統</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background-color: #020617; color: #f8fafc; padding: 20px; line-height: 1.5; }
+    .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    
+    /* Header */
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+    .title-group { display: flex; align-items: center; gap: 10px; }
+    .title { font-size: 22px; font-weight: 900; background: linear-gradient(to right, #f87171, #fde047, #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+    .btn-group { display: flex; gap: 10px; }
+    .btn { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
+    .btn-blue { background: rgba(37, 99, 235, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .btn-blue:hover { background: rgba(37, 99, 235, 0.4); }
+    .btn-green { background: #059669; color: #ffffff; }
+    .btn-green:hover { background: #10b981; }
+
+    /* Card Section */
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
+    .card-header { padding: 12px 16px; background: rgba(30, 41, 59, 0.6); border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
+    .card-title { font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+    .card-body { padding: 16px; }
+
+    /* Table */
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+    th { padding: 12px; background: #020617; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #1e293b; }
+    td { padding: 12px; border-bottom: 1px solid #1e293b; }
+    tr.stock-row { cursor: pointer; transition: background 0.15s; }
+    tr.stock-row:hover { background: rgba(30, 41, 59, 0.5); }
+    tr.stock-row.active { background: rgba(51, 65, 85, 0.8); }
+
+    /* Badges & Tags */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    .badge-profit { color: #f87171; font-weight: bold; font-family: monospace; }
+    .badge-loss { color: #34d399; font-weight: bold; font-family: monospace; }
+    .badge-hold { background: rgba(6, 78, 59, 0.5); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); }
+    .badge-stop { background: rgba(136, 19, 55, 0.7); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.6); animation: pulse 1.5s infinite; }
+    .badge-take { background: rgba(120, 53, 15, 0.6); color: #fde047; border: 1px solid rgba(234, 179, 8, 0.5); }
+    .tag-type { font-size: 10px; background: #1e293b; color: #cbd5e1; padding: 2px 5px; border-radius: 4px; border: 1px solid #334155; margin-right: 6px; }
+
+    /* Diagnosis Grid */
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 12px; }
+    .diag-box { background: rgba(2, 6, 23, 0.7); border: 1px solid #1e293b; border-radius: 8px; padding: 14px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .diag-box-header { display: flex; justify-content: space-between; font-weight: bold; color: #f1f5f9; }
+    .diag-score { color: #fbbf24; font-family: monospace; }
+    .diag-list { display: flex; flex-direction: column; gap: 4px; color: #94a3b8; }
+    .diag-list span { color: #e2e8f0; }
+
+    /* Script Plans */
+    .script-box { background: rgba(76, 5, 25, 0.25); border: 1px solid rgba(225, 29, 72, 0.3); border-radius: 8px; padding: 12px; font-size: 12px; color: #fecdd3; line-height: 1.6; }
+    .plan-card { background: rgba(2, 6, 23, 0.7); border-radius: 8px; padding: 12px; font-size: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 6px; }
+    .plan-green { border-color: rgba(16, 185, 129, 0.3); }
+    .plan-yellow { border-color: rgba(245, 158, 11, 0.3); }
+    .plan-red { border-color: rgba(239, 68, 68, 0.4); }
+
+    /* Form Modal */
+    .form-panel { display: none; background: #0f172a; border: 1px solid #334155; padding: 16px; border-radius: 8px; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .form-panel.show { display: grid; }
+    .form-group label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; background: #020617; border: 1px solid #334155; border-radius: 4px; padding: 6px 8px; color: #ffffff; font-size: 12px; }
+
+    /* Snapshot */
+    .snapshot-box { background: #020617; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; color: #cbd5e1; word-break: break-all; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-6 font-sans">
-  <div class="max-w-7xl mx-auto space-y-6">
+<body>
 
+  <div class="container">
     <!-- 頁頭看板 -->
-    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+    <div class="header">
       <div>
-        <div class="flex items-center gap-2.5">
-          <span class="text-2xl">⚖️</span>
-          <h1 class="text-xl md:text-2xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-amber-200 to-emerald-400">
-            華爾街量化風控官 × 台股籌碼操盤手系統
-          </h1>
+        <div class="title-group">
+          <span style="font-size: 24px;">⚖️</span>
+          <div class="title">華爾街量化風控官 × 台股籌碼操盤手系統</div>
         </div>
-        <p class="text-xs md:text-sm text-slate-400 mt-1">
-          以極度理性、鐵血無情的紀律，克服「捨不得賣、凹單、抱上抱下」的人性弱點。
-        </p>
+        <div class="subtitle">以極度理性、鐵血無情的紀律，克服「捨不得賣、凹單、抱上抱下」的人性弱點。</div>
       </div>
-      <div class="flex items-center gap-2">
-        <button id="btn-sync" class="px-3.5 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-lg text-xs font-semibold text-blue-200 transition">
-          🔄 自動更新盤後行情
-        </button>
-        <button id="btn-toggle-add" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-semibold text-white shadow-lg transition">
-          + KEY入持股部位
-        </button>
+      <div class="btn-group">
+        <button id="btn-sync" class="btn btn-blue" onclick="syncMarketData()">🔄 自動更新盤後行情</button>
+        <button class="btn btn-green" onclick="toggleAddForm()">+ KEY入持股部位</button>
       </div>
-    </header>
+    </div>
 
-    <!-- 新增持股表單 (預設隱藏) -->
-    <form id="add-form" class="hidden bg-slate-900 border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-6 gap-3 text-xs shadow-2xl">
-      <div>
-        <label class="text-slate-400 block mb-1">股票代號</label>
-        <input id="in-code" required type="text" placeholder="如 2330" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" />
+    <!-- 新增持股表單 -->
+    <div id="add-form" class="form-panel">
+      <div class="form-group">
+        <label>股票代號</label>
+        <input id="in-code" placeholder="如 2330" />
       </div>
-      <div>
-        <label class="text-slate-400 block mb-1">股票名稱</label>
-        <input id="in-name" required type="text" placeholder="如 台積電" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" />
+      <div class="form-group">
+        <label>股票名稱</label>
+        <input id="in-name" placeholder="如 台積電" />
       </div>
-      <div>
-        <label class="text-slate-400 block mb-1">持有張數</label>
-        <input id="in-shares" required type="number" step="1" value="1" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" />
+      <div class="form-group">
+        <label>張數</label>
+        <input id="in-shares" type="number" value="1" />
       </div>
-      <div>
-        <label class="text-slate-400 block mb-1">平均成本</label>
-        <input id="in-cost" required type="number" step="0.1" value="100" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" />
+      <div class="form-group">
+        <label>平均成本</label>
+        <input id="in-cost" type="number" step="0.1" value="100" />
       </div>
-      <div>
-        <label class="text-slate-400 block mb-1">期間最高價</label>
-        <input id="in-high" required type="number" step="0.1" value="100" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white" />
-      </div>
-      <div class="flex items-end">
-        <button type="submit" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded font-bold text-white transition">儲存加入</button>
-      </div>
-    </form>
-
-    <!-- 📋 一、個人庫存風控儀表板 -->
-    <section class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
-      <div class="px-5 py-3.5 bg-slate-800/70 border-b border-slate-800 flex justify-between items-center">
-        <h2 class="text-sm md:text-base font-bold flex items-center gap-2">
-          <span>📋</span> 一、個人庫存風控儀表板
-        </h2>
-        <span class="text-xs text-slate-400">點選該列切換下方深度診斷</span>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs md:text-sm">
-          <thead class="bg-slate-950 text-slate-400 border-b border-slate-800">
-            <tr>
-              <th class="p-3">股號/名稱</th>
-              <th class="p-3">張數</th>
-              <th class="p-3">平均成本</th>
-              <th class="p-3">今日收盤</th>
-              <th class="p-3">期間最高價</th>
-              <th class="p-3">帳面損益(%)</th>
-              <th class="p-3">目前防守底線 (觸發價)</th>
-              <th class="p-3">系統強制指令</th>
-            </tr>
-          </thead>
-          <tbody id="portfolio-tbody" class="divide-y divide-slate-800">
-            <!-- 股票列表動態渲染 -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 🔍 二、個股四維度深度診斷 -->
-    <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2">
-        <h2 class="text-sm md:text-base font-bold flex items-center gap-2">
-          <span>🔍</span> 二、個股四維度深度診斷：
-          <span id="diag-title" class="text-amber-300">【2330 台積電】</span>
-        </h2>
-        <div class="text-xs font-semibold px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-slate-200">
-          多空總評分：<span id="diag-score" class="text-amber-400 text-sm font-black">9.6</span> / 10 分
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <!-- 籌碼面 -->
-        <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-          <div class="font-bold text-slate-200 flex items-center justify-between">
-            <span>📊 籌碼面透視</span>
-            <span id="diag-score-chip" class="text-amber-400 font-mono">得分: 3.8 / 4.0</span>
-          </div>
-          <div class="text-slate-400 space-y-1">
-            <div>外資買賣超：<span id="diag-foreign" class="text-slate-200">+12,450張 (連3買)</span></div>
-            <div>投信買賣超：<span id="diag-trust" class="text-slate-200">+1,230張 (連5買)</span></div>
-            <div>資券變化：<span id="diag-margin" class="text-slate-200">-1,820張</span></div>
-            <div>借券變化：<span id="diag-borrow" class="text-slate-200">-4,100張 (空方回補)</span></div>
-            <div id="diag-broker" class="pt-1 text-[11px] border-t border-slate-800 text-amber-200/90 font-mono">
-              主力分點：⚠️ 查無當日公開分點數據，請手動補充
-            </div>
-          </div>
-        </div>
-
-        <!-- 技術面 -->
-        <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-          <div class="font-bold text-slate-200 flex items-center justify-between">
-            <span>📈 技術面結構</span>
-            <span id="diag-score-tech" class="text-amber-400 font-mono">得分: 2.8 / 3.0</span>
-          </div>
-          <div class="text-slate-400 space-y-1 font-mono">
-            <div>今日收盤：<span id="diag-close">1070.0</span> 元</div>
-            <div>5MA: <span id="diag-ma5">1060.0</span> | 10MA: <span id="diag-ma10">1045.0</span></div>
-            <div>20MA (月線)：<span id="diag-ma20">1025.0</span> 元</div>
-            <div id="diag-trend" class="pt-1 text-[11px] border-t border-slate-800 text-slate-300">
-              位階評估：月線之上多頭掌控
-            </div>
-          </div>
-        </div>
-
-        <!-- 基本面與題材 -->
-        <div class="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2 text-xs">
-          <div class="font-bold text-slate-200 flex items-center justify-between">
-            <span>📰 基本面與意圖拆解</span>
-            <span id="diag-score-fund" class="text-amber-400 font-mono">得分: 3.0 / 3.0</span>
-          </div>
-          <p id="diag-news" class="text-slate-300 leading-relaxed text-[11px]">
-            先進製程稼動率維持高檔，AI 晶片長期營運展望強勁。
-          </p>
-          <div class="text-[11px] text-rose-300/90 pt-1 border-t border-slate-800">
-            ⚠️ 操盤手告誡：若出現利多長黑或法說會後大跌，為主力倒貨訊號，拒絕基本面凹單！
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ⚡ 三、冷酷風控官的明日操作劇本 -->
-    <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-3">
-      <h2 class="text-sm md:text-base font-bold flex items-center gap-2 text-rose-300">
-        <span>⚡</span> 三、冷酷風控官的明日操作劇本
-      </h2>
-
-      <div class="p-3.5 rounded-lg bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs leading-relaxed">
-        <strong class="text-rose-400">🧠 紀律當頭棒喝：</strong>
-        <span id="diag-warning">
-          獲利已達到 +9.18%！守好保本線與月線，未破之前耐心抱牢，避免被洗盤震盪洗出場！
-        </span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
-        <div class="p-3 bg-slate-950/70 border border-emerald-500/20 rounded-lg space-y-1">
-          <div class="font-bold text-emerald-400">🟢 強勢續抱條件</div>
-          <div class="text-slate-400 leading-normal">
-            明日收盤守穩 <span id="plan-hold-price" class="text-emerald-300 font-mono font-bold">1060.0 元 (5MA)</span> 且成交量維持常態，續抱享受波段利潤。
-          </div>
-        </div>
-
-        <div class="p-3 bg-slate-950/70 border border-amber-500/20 rounded-lg space-y-1">
-          <div class="font-bold text-amber-300">🟡 逢高調節條件</div>
-          <div class="text-slate-400 leading-normal">
-            若盤中拉高碰觸前高但爆出巨量長上影線，逢高減碼 1/3 ~ 1/2 入袋為安。
-          </div>
-        </div>
-
-        <div class="p-3 bg-slate-950/70 border border-rose-500/30 rounded-lg space-y-1">
-          <div class="font-bold text-rose-400">🔴 鐵血停損/停利條件</div>
-          <div class="text-slate-300 leading-normal">
-            只要盤中觸碰或收盤跌破 <span id="plan-stop-price" class="text-rose-400 font-mono font-bold">1025.0 元</span>，無條件市價清倉，絕不猶豫！
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 💾 四、系統狀態記憶碼 -->
-    <section class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl space-y-2">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-          <span>💾</span> 四、系統狀態記憶碼 (State Snapshot)
-        </h2>
-        <button id="btn-copy" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-amber-300 transition">
-          📋 複製記憶碼
-        </button>
-      </div>
-      <div id="snapshot-code" class="p-2.5 bg-slate-950 border border-slate-800 rounded font-mono text-[11px] text-slate-300 break-all select-all">
-        <!-- 記憶碼 -->
-      </div>
-      <p class="text-[10px] text-slate-400">
-        * 每日盤後複製此碼儲存於個人筆記，可隨時貼回對話快速還原部位資訊。
-      </p>
-    </section>
-
-  </div>
-
-  <script>
-    // 預設持股部位
-    let stocks = [
-      {
-        id: "2330", code: "2330", name: "台積電", shares: 2, cost: 980.0,
-        highPrice: 1095.0, closePrice: 1070.0, ma5: 1060.0, ma10: 1045.0, ma20: 1025.0,
-        type: "波段", foreignBuy: "+12,450張 (連3買)", trustBuy: "+1,230張 (連5買)",
-        marginChange: "-1,820張", borrowShortChange: "-4,100張 (空方回補)",
+      <div class="form-group">
+        <label>期間最高價</label>
+        <input id="in-high" type="number" step="0
