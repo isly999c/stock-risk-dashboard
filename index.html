@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>華爾街量化風控官 × 台股籌碼操盤手系統 (v3.6 Pro 終極修復旗艦版)</title>
+  <title>華爾街量化風控官 × 台股籌碼操盤手系統 (v3.7 Pro 財報深度透視旗艦版)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React 18 & ReactDOM -->
@@ -26,13 +26,18 @@
     const { useState, useMemo, useEffect, useRef } = React;
 
     // ============================================================================
-    // 🛡️ 防崩潰安全數值格式化工具 (徹底杜絕 undefined.toFixed 造成黑畫面)
+    // 🛡️ 防崩潰安全數值格式化工具
     // ============================================================================
     const safeNum = (val, fallback = 0) => {
       const n = Number(val);
       return Number.isFinite(n) ? n : fallback;
     };
     const fmtNum = (val, digits = 2) => safeNum(val, 0).toFixed(digits);
+    const fmtSignNum = (val, digits = 2, suffix = "%") => {
+      if (val === null || val === undefined || !Number.isFinite(Number(val))) return "-";
+      const n = Number(val);
+      return `${n >= 0 ? "+" : ""}${n.toFixed(digits)}${suffix}`;
+    };
 
     // 永久固定之 LocalStorage 金鑰 (自動向下相容所有舊版本資料)
     const PRIMARY_STORAGE_KEY = "WALLSTREET_TW_PORTFOLIO_PERMANENT";
@@ -41,14 +46,12 @@
     const LEGACY_CLOUD_KEY = "WALLSTREET_TW_CLOUD_URL";
     const LEGACY_KEYS = ["wallstreet_tw_stocks_v3", "wallstreet_tw_stocks_v2", "wallstreet_tw_stocks"];
 
-    // 預設簡易帳號分類清單
     const DEFAULT_ACCOUNTS = [
       { id: "acc_main", name: "👤 主力波段帳戶" },
       { id: "acc_short", name: "⚡ 短線衝刺帳戶" },
       { id: "acc_etf", name: "🏦 長線存股/ETF" }
     ];
 
-    // 內建精確台股與熱門 ETF 名稱字典
     const BUILTIN_STOCK_DIR = {
       "009816": "凱基台灣TOP50",
       "0050": "元大台灣50", "0056": "元大高股息", "00878": "國泰永續高股息",
@@ -90,6 +93,44 @@
       }
     };
 
+    // 將 YYYY-MM-DD 轉為季度標籤 (例如 2026-06-30 -> 2026Q2)
+    const dateToQuarterLabel = (dateStr) => {
+      if (!dateStr) return "";
+      const parts = String(dateStr).split("-");
+      const y = parts[0];
+      const m = parseInt(parts[1] || "1", 10);
+      const q = m <= 3 ? 1 : m <= 6 ? 2 : m <= 9 ? 3 : 4;
+      return `${y}Q${q}`;
+    };
+
+    // 預設 2330 台積電 示範財報明細
+    const DEMO_TSMC_DETAILS = {
+      monthlyRevenues: [
+        { ym: "2026/09", revB: 2518.7, mom: 0.4, yoy: 39.6 },
+        { ym: "2026/08", revB: 2508.7, mom: -2.4, yoy: 33.0 },
+        { ym: "2026/07", revB: 2569.5, mom: 23.6, yoy: 44.7 },
+        { ym: "2026/06", revB: 2078.7, mom: -9.5, yoy: 32.9 },
+        { ym: "2026/05", revB: 2296.2, mom: -2.7, yoy: 30.1 },
+        { ym: "2026/04", revB: 2360.2, mom: 20.9, yoy: 59.6 },
+        { ym: "2026/03", revB: 1952.1, mom: 7.5, yoy: 34.3 },
+        { ym: "2026/02", revB: 1816.5, mom: -15.8, yoy: 11.3 },
+        { ym: "2026/01", revB: 2157.9, mom: 22.4, yoy: 7.9 },
+        { ym: "2025/12", revB: 1763.0, mom: -14.4, yoy: -8.4 },
+        { ym: "2025/11", revB: 2060.3, mom: -15.3, yoy: -7.5 },
+        { ym: "2025/10", revB: 2432.0, mom: 34.8, yoy: 15.7 }
+      ],
+      quarterlyStats: [
+        { qLabel: "2026Q3", date: "2026-09-30", revB: 7596.9, revQoQ: 12.8, revYoY: 39.0, eps: 12.54, epsQoQ: 31.2, epsYoY: 54.2, gmPct: 57.8, gmQoQ: 4.6, gmYoY: 3.5, opMarginPct: 47.5, nonOpRatioPct: 3.4, invB: 2928.5, invQoQ: 4.1, invYoY: 12.4, contractLiabB: 542.8, clQoQ: 8.5, clYoY: 24.6 },
+        { qLabel: "2026Q2", date: "2026-06-30", revB: 6735.1, revQoQ: 13.6, revYoY: 40.1, eps: 9.56, epsQoQ: 9.9, epsYoY: 36.3, gmPct: 53.2, gmQoQ: 0.1, gmYoY: -0.9, opMarginPct: 42.5, nonOpRatioPct: 5.1, invB: 2812.0, invQoQ: 6.2, invYoY: 8.5, contractLiabB: 500.2, clQoQ: 6.1, clYoY: 19.8 },
+        { qLabel: "2026Q1", date: "2026-03-31", revB: 5926.4, revQoQ: -5.3, revYoY: 16.5, eps: 8.70, epsQoQ: -5.5, epsYoY: 8.9, gmPct: 53.1, gmQoQ: 0.1, gmYoY: -3.2, opMarginPct: 42.0, nonOpRatioPct: 5.8, invB: 2648.0, invQoQ: 5.5, invYoY: -2.1, contractLiabB: 471.5, clQoQ: 4.2, clYoY: 15.2 },
+        { qLabel: "2025Q4", date: "2025-12-31", revB: 6255.3, revQoQ: 14.4, revYoY: 0.0, eps: 9.21, epsQoQ: 13.6, epsYoY: -19.3, gmPct: 53.0, gmQoQ: -1.3, gmYoY: -9.2, opMarginPct: 41.6, nonOpRatioPct: 6.2, invB: 2510.0, invQoQ: -3.8, invYoY: -8.4, contractLiabB: 452.4, clQoQ: 3.1, clYoY: 10.5 },
+        { qLabel: "2025Q3", date: "2025-09-30", revB: 5467.3, revQoQ: 13.7, revYoY: -10.8, eps: 8.11, epsQoQ: 15.6, epsYoY: -24.9, gmPct: 54.3, gmQoQ: 0.2, gmYoY: -6.1, opMarginPct: 41.7, nonOpRatioPct: 5.5, invB: 2608.0, invQoQ: 0.6, invYoY: -5.2, contractLiabB: 438.8, clQoQ: 4.9, clYoY: 8.1 },
+        { qLabel: "2025Q2", date: "2025-06-30", revB: 4808.4, revQoQ: -5.5, revYoY: -10.0, eps: 7.01, epsQoQ: -12.2, epsYoY: -23.3, gmPct: 54.1, gmQoQ: -2.2, gmYoY: -5.0, opMarginPct: 42.0, nonOpRatioPct: 5.9, invB: 2592.0, invQoQ: -4.2, invYoY: -1.8, contractLiabB: 418.2, clQoQ: 2.1, clYoY: 6.4 },
+        { qLabel: "2025Q1", date: "2025-03-31", revB: 5086.3, revQoQ: -18.7, revYoY: 3.6, eps: 7.98, epsQoQ: -30.0, epsYoY: 2.1, gmPct: 56.3, gmQoQ: -5.9, gmYoY: 0.7, opMarginPct: 45.5, nonOpRatioPct: 4.8, invB: 2705.0, invQoQ: -1.3, invYoY: 8.2, contractLiabB: 409.5, clQoQ: 0.0, clYoY: 5.2 },
+        { qLabel: "2024Q4", date: "2024-12-31", revB: 6255.0, revQoQ: 2.0, revYoY: 42.8, eps: 11.41, epsQoQ: 5.4, epsYoY: 78.0, gmPct: 62.2, gmQoQ: 1.8, gmYoY: 9.5, opMarginPct: 52.0, nonOpRatioPct: 3.1, invB: 2740.0, invQoQ: 0.0, invYoY: 11.0, contractLiabB: 409.5, clQoQ: 1.0, clYoY: 12.0 }
+      ]
+    };
+
     const INITIAL_STOCKS = [
       {
         id: "2330",
@@ -127,9 +168,11 @@
         institutionalNote: "外資 +12,450張 (連3買) / 投信 +1,230張 (連5買) / 自營商 +310張，土洋法人同步買超鎖碼。",
         marginNote: "融資 -1,820張、融券 +320張，散戶浮額減少、籌碼流向大戶。",
         branchNote: "🤖 系統籌碼推算：外資與投信大額買超主導盤勢，主力買盤集中度高，無明顯隔日沖亂場跡象。",
-        revenueNote: "最新單月營收年增 (YoY) +34.2%、月增 (MoM) +6.8%，續創歷年同期新高。",
-        epsNote: "最新單季 EPS 12.54 元｜本益比 (PE) 約 22.4 倍｜殖利率約 1.6%",
-        fundamentalNote: "CoWoS 先進封裝與 2奈米需求強勁，AI 伺服器晶片訂單滿載。",
+        revenueNote: "2026/09 單月營收 2,518.70 億元｜年增(YoY) +39.6%、月增(MoM) +0.4% (年月雙增)",
+        epsNote: "最新季(2026Q3) EPS 12.54元 (季增+31.2% / 年增+54.2%)｜毛利率 57.8%｜業外占比 3.4%",
+        balanceNote: "存貨(庫存) 2,928.5億 (季增+4.1%)｜合約負債 542.8億 (季增+8.5% / 年增+24.6%，在手訂單強勁)",
+        fundamentalNote: "CoWoS 先進封裝與 2奈米需求強勁，合約負債持續創高，本業獲利品質極佳。",
+        financialDetails: DEMO_TSMC_DETAILS,
         newsItems: [
           { title: "台積電先進製程產能滿載 法人上修明年資本支出與獲利展望", pubDate: "近期焦點", link: "https://news.google.com/search?q=2330+台積電&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" }
         ]
@@ -172,14 +215,16 @@
         branchNote: "🤖 系統籌碼推算：此標的為市值型 ETF (009816 凱基台灣TOP50)，走勢緊貼台股前 50 大權值股與淨值表現，無單一主力惡意隔日沖問題。",
         revenueNote: "ETF 追蹤「特選臺灣TOP 50指數」(不適用公司月營收)",
         epsNote: "不配息設計（現金股利自動再投入淨值複利滾存）｜經理費 0.07%",
+        balanceNote: "ETF 基金資產配置於台股前 50 大市值龍頭股，不適用一般製造業存貨與合約負債。",
         fundamentalNote: "篩選台股市值前 50 大且近四季稅後純益總和 > 0 之獲利企業，並搭配動能加碼機制。",
+        financialDetails: { monthlyRevenues: [], quarterlyStats: [], isETF: true },
         newsItems: [
           { title: "009816 凱基台灣TOP50 主打不配息股利自動再投資 吸引長線複利買盤關注", pubDate: "近期焦點", link: "https://news.google.com/search?q=009816+凱基台灣TOP50&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" }
         ]
       }
     ];
 
-    // 正規化股票欄位 (確保任何版本或雲端下載的資料欄位 100% 完整，絕不缺欄崩潰)
+    // 正規化股票欄位 (確保任何版本或雲端下載的資料欄位 100% 完整)
     const normalizeStockItem = (item, idx = 0) => {
       if (!item || typeof item !== "object") return INITIAL_STOCKS[0];
       const cleanCode = String(item.code || "0000").trim().toUpperCase();
@@ -194,9 +239,12 @@
       const ma20 = safeNum(item.ma20, Number((todayClose * 0.975).toFixed(2)));
       const defaultAcc = item.accountId || (cleanCode.startsWith("00") ? "acc_etf" : "acc_main");
 
-      // 修復 v3.3 中 stopLossPct 若為空或 NaN 時的預設值
       const parsedStopPct = safeNum(item.stopLossPct ?? item.customLossPct, 0);
       const validStopPct = parsedStopPct > 0 ? parsedStopPct : (item.mode === "short" ? 5.0 : 10.0);
+
+      const defaultFinDetails = cleanCode === "2330"
+        ? DEMO_TSMC_DETAILS
+        : { monthlyRevenues: [], quarterlyStats: [], isETF: cleanCode.startsWith("00") };
 
       return {
         id: String(item.id || `${cleanCode}_${Date.now()}_${idx}`),
@@ -234,9 +282,13 @@
         institutionalNote: item.institutionalNote || item.foreignBuy || "點擊「🔄 抓價」同步最新三大法人買賣超",
         marginNote: item.marginNote || item.marginChange || "點擊「🔄 抓價」同步最新融資融券變化",
         branchNote: item.branchNote || item.keyBroker || "🤖 點擊「🔄 抓價」由系統根據法人與量價推算主力動向",
-        revenueNote: item.revenueNote || "點擊「🔄 抓價」自動抓取最新單月營收 YoY / MoM",
-        epsNote: item.epsNote || "點擊「🔄 抓價」自動抓取最新財報 EPS 與本益比",
+        revenueNote: item.revenueNote || "點擊「🔄 抓價」自動抓取近一年月營收與 YoY / MoM",
+        epsNote: item.epsNote || "點擊「🔄 抓價」自動抓取近兩年季財報 EPS、毛利率與業外占比",
+        balanceNote: item.balanceNote || "點擊「🔄 抓價」自動抓取最新季底存貨(庫存)與合約負債",
         fundamentalNote: item.fundamentalNote || item.newsNote || "請遵守設定之停損條件，拒絕基本面凹單。",
+        financialDetails: item.financialDetails && Array.isArray(item.financialDetails.monthlyRevenues)
+          ? item.financialDetails
+          : defaultFinDetails,
         newsItems: Array.isArray(item.newsItems) ? item.newsItems : []
       };
     };
@@ -254,7 +306,7 @@
         return DEFAULT_ACCOUNTS;
       });
 
-      // 2. 讀取股票庫存清單 (跨版本永久保留)
+      // 2. 讀取股票庫存清單
       const [stocks, setStocks] = useState(() => {
         try {
           const permSaved = localStorage.getItem(PRIMARY_STORAGE_KEY);
@@ -279,7 +331,7 @@
         return INITIAL_STOCKS;
       });
 
-      // 3. 讀取 Google Sheets 雲端網址 (自動繼承 v3.3 與 v3.4 貼過的網址)
+      // 3. 讀取 Google Sheets 雲端網址
       const [cloudUrl, setCloudUrl] = useState(() => {
         return localStorage.getItem(CLOUD_URL_KEY) || localStorage.getItem(LEGACY_CLOUD_KEY) || "";
       });
@@ -290,6 +342,7 @@
       const [selectedStockId, setSelectedStockId] = useState(() => stocks[0]?.id || "2330");
       const [colorStyle, setColorStyle] = useState("tw");
       const [activeTab, setActiveTab] = useState("dashboard");
+      const [finSubTab, setFinSubTab] = useState("all"); // 'all' | 'revenue' | 'quarterly' | 'margin' | 'balance'
       const [snapshotInput, setSnapshotInput] = useState("");
       const [syncBannerMsg, setSyncBannerMsg] = useState(null);
       const [copiedType, setCopiedType] = useState(null);
@@ -351,7 +404,7 @@
         }
       }, [activeAccountId]);
 
-      // 啟動時從 FinMind 載入全市場台股與 ETF 正確中文名稱字典，並自動修正清單中未識別之股名
+      // 啟動時從 FinMind 載入全市場台股與 ETF 正確中文名稱字典
       useEffect(() => {
         const loadAllTwStockNames = async () => {
           try {
@@ -368,7 +421,6 @@
                 map["009816"] = "凱基台灣TOP50";
                 setStockDict(map);
 
-                // 自動將現有庫存中名稱為「台股(...)」或「自動抓取」的項目修正為真實名稱
                 setStocks(prev => prev.map(s => {
                   const realName = map[s.code];
                   if (realName && (!s.name || s.name.includes("台股(") || s.name.includes("自動抓取") || s.name.includes("連線抓取"))) {
@@ -397,10 +449,10 @@
           return alert("⚠️ 請先在下方【Google Sheets 跨裝置雲端同步中心】貼上您的 Google Apps Script 網址！");
         }
         setIsCloudPushing(true);
-        setSyncBannerMsg("☁️ 正在將所有帳號與庫存明細上傳至 Google Sheets 雲端資料庫...");
+        setSyncBannerMsg("☁️ 正在將所有帳號、庫存明細與財報數據上傳至 Google Sheets 雲端資料庫...");
         try {
           const payload = JSON.stringify({
-            version: "3.6",
+            version: "3.7",
             updatedAt: new Date().toISOString(),
             accounts,
             stocks
@@ -507,7 +559,7 @@
       const handleExportBackupFile = () => {
         try {
           const backupPayload = {
-            version: "3.6",
+            version: "3.7",
             exportedAt: new Date().toISOString(),
             accounts,
             stocks
@@ -564,7 +616,7 @@
       };
 
       // ============================================================================
-      // 🌐 全方位自動抓取引擎 (FinMind K線5/10/20/60MA + 法人資券 + 主力推算 + 月營收/EPS/PE + Google新聞)
+      // 🌐 全方位自動抓取引擎 (含：近1年營收 + 近2年季報EPS + 毛利率與業外占比 + 庫存與合約負債)
       // ============================================================================
       const fetchSingleStockMarketData = async (stockItem) => {
         const cleanCode = String(stockItem.code).trim().toUpperCase();
@@ -582,7 +634,9 @@
         let autoBranchNote = stockItem.branchNote;
         let revenueNote = stockItem.revenueNote;
         let epsNote = stockItem.epsNote;
+        let balanceNote = stockItem.balanceNote;
         let newsList = Array.isArray(stockItem.newsItems) ? stockItem.newsItems : [];
+        let finDetails = stockItem.financialDetails || { monthlyRevenues: [], quarterlyStats: [], isETF };
 
         let chipForeignTrustBuy = stockItem.chipForeignTrustBuy;
         let chipMarginDownShortUp = stockItem.chipMarginDownShortUp;
@@ -593,7 +647,8 @@
 
         const startD130 = new Date(Date.now() - 135 * 86400000).toISOString().slice(0, 10);
         const startDShort = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
-        const startDYear = new Date(Date.now() - 420 * 86400000).toISOString().slice(0, 10);
+        // 為計算近1年月營收 YoY 與近2年季財報 YoY，往前抓 3.2 年 (1180天)
+        const startD3Years = new Date(Date.now() - 1180 * 86400000).toISOString().slice(0, 10);
 
         // 1. 查詢股名
         if (!fetchedName) {
@@ -663,7 +718,7 @@
           }
         } catch (e) {}
 
-        // 3. Yahoo Finance K線備援 (針對新掛牌 ETF 如 009816)
+        // 3. Yahoo Finance K線備援
         if (!priceResult) {
           const suffixes = [".TW", ".TWO"];
           for (const sfx of suffixes) {
@@ -805,7 +860,13 @@
           }
         }
 
-        // 6. 抓取每月營收 YoY/MoM 與 季報 EPS / 本益比
+        // ============================================================================
+        // 📊 6. 深度財報四大維度抓取引擎：
+        //    (1) 近一年每月營收 + YoY/MoM
+        //    (2) 近兩年季財報 (8季) + QoQ/YoY
+        //    (3) 毛利率 QoQ/YoY + 業外占比
+        //    (4) 庫存(存貨) + 合約負債
+        // ============================================================================
         if (isETF) {
           const etfInfo = ETF_FUNDAMENTAL_DB[cleanCode] || {
             revText: `ETF 基金標的 (${cleanCode})，追蹤標的指數表現，不適用一般公司月營收。`,
@@ -814,71 +875,209 @@
           };
           revenueNote = etfInfo.revText;
           epsNote = `${etfInfo.epsText}｜${etfInfo.peText}`;
+          balanceNote = "ETF 為一籃子股票投資組合，無製造業存貨與合約負債科目。";
+          finDetails = { monthlyRevenues: [], quarterlyStats: [], isETF: true };
           fundRevGrowthTheme = true;
         } else {
+          let parsedMonthlyList = finDetails.monthlyRevenues || [];
+          let parsedQuarterlyList = finDetails.quarterlyStats || [];
+
+          // (A) 抓取近一年 (12個月) 每月營收並計算 YoY 與 MoM
           try {
-            const revUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMonthRevenue&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDYear}`;
+            const revUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMonthRevenue&data_id=${encodeURIComponent(cleanCode)}&start_date=${startD3Years}`;
             const revRes = await fetch(revUrl);
             if (revRes.ok) {
               const revJson = await revRes.json();
               if (Array.isArray(revJson?.data) && revJson.data.length > 0) {
-                const rows = revJson.data;
-                const latestR = rows[rows.length - 1];
-                const prevMonthR = rows.length >= 2 ? rows[rows.length - 2] : null;
-                const prevYearR = rows.find(
-                  r => Number(r.revenue_year) === Number(latestR.revenue_year) - 1 && Number(r.revenue_month) === Number(latestR.revenue_month)
-                );
+                const rows = revJson.data.filter(r => Number(r.revenue) > 0);
+                // 依照 revenue_year, revenue_month 排序
+                rows.sort((a, b) => (Number(a.revenue_year) * 100 + Number(a.revenue_month)) - (Number(b.revenue_year) * 100 + Number(b.revenue_month)));
 
-                const revBillion = (Number(latestR.revenue) / 100000000).toFixed(2);
-                const mom = prevMonthR && Number(prevMonthR.revenue) > 0
-                  ? (((Number(latestR.revenue) - Number(prevMonthR.revenue)) / Number(prevMonthR.revenue)) * 100).toFixed(1)
-                  : null;
-                const yoy = prevYearR && Number(prevYearR.revenue) > 0
-                  ? (((Number(latestR.revenue) - Number(prevYearR.revenue)) / Number(prevYearR.revenue)) * 100).toFixed(1)
-                  : null;
+                const calcList = rows.map((r, i) => {
+                  const yr = Number(r.revenue_year);
+                  const mo = Number(r.revenue_month);
+                  const revVal = Number(r.revenue);
+                  const revB = Number((revVal / 100000000).toFixed(2)); // 億元
 
-                const momStr = mom !== null ? `月增(MoM) ${Number(mom) >= 0 ? "+" : ""}${mom}%` : "";
-                const yoyStr = yoy !== null ? `年增(YoY) ${Number(yoy) >= 0 ? "+" : ""}${yoy}%` : "";
-                revenueNote = `${latestR.revenue_year}年${latestR.revenue_month}月營收 ${revBillion} 億元｜${[yoyStr, momStr].filter(Boolean).join("、")}`;
-                if (yoy !== null) {
-                  fundRevGrowthTheme = Number(yoy) > 0 || Number(mom) > 0;
+                  const prevMoRow = i >= 1 ? rows[i - 1] : null;
+                  const prevYrRow = rows.find(x => Number(x.revenue_year) === yr - 1 && Number(x.revenue_month) === mo);
+
+                  const mom = prevMoRow && Number(prevMoRow.revenue) > 0
+                    ? Number((((revVal - Number(prevMoRow.revenue)) / Number(prevMoRow.revenue)) * 100).toFixed(2))
+                    : null;
+                  const yoy = prevYrRow && Number(prevYrRow.revenue) > 0
+                    ? Number((((revVal - Number(prevYrRow.revenue)) / Number(prevYrRow.revenue)) * 100).toFixed(2))
+                    : null;
+
+                  return {
+                    ym: `${yr}/${String(mo).padStart(2, "0")}`,
+                    year: yr,
+                    month: mo,
+                    revB,
+                    mom,
+                    yoy
+                  };
+                });
+
+                // 取最近 12 個月 (由新到舊排列)
+                parsedMonthlyList = calcList.slice(-12).reverse();
+
+                if (parsedMonthlyList.length > 0) {
+                  const latestM = parsedMonthlyList[0];
+                  const trendTag = (latestM.yoy > 0 && latestM.mom > 0)
+                    ? "🔥 年月雙增"
+                    : (latestM.yoy > 0)
+                    ? "📈 年增成長"
+                    : (latestM.mom > 0)
+                    ? "↗️ 月增回溫"
+                    : "⚠️ 動能轉弱";
+                  revenueNote = `${latestM.ym} 單月營收 ${latestM.revB} 億元｜年增(YoY) ${fmtSignNum(latestM.yoy, 1)}、月增(MoM) ${fmtSignNum(latestM.mom, 1)} (${trendTag})`;
+                  fundRevGrowthTheme = (latestM.yoy !== null && latestM.yoy > 0) || (latestM.mom !== null && latestM.mom > 0);
                 }
               }
             }
           } catch (e) {}
 
-          let latestEpsStr = "";
-          let latestPeStr = "";
+          // (B) 抓取近兩年 (8季) 綜合損益表 (TaiwanStockFinancialStatements) 與 資產負債表 (TaiwanStockBalanceSheet)
           try {
-            const fsUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDYear}`;
-            const fsRes = await fetch(fsUrl);
+            const [fsRes, bsRes] = await Promise.all([
+              fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${encodeURIComponent(cleanCode)}&start_date=${startD3Years}`),
+              fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockBalanceSheet&data_id=${encodeURIComponent(cleanCode)}&start_date=${startD3Years}`)
+            ]);
+
+            const fsMap = {}; // date -> { Revenue, GrossProfit, OperatingIncome, PreTaxIncome, IncomeAfterTaxes, EPS }
+            const bsMap = {}; // date -> { Inventory, ContractLiabilities }
+
             if (fsRes.ok) {
               const fsJson = await fsRes.json();
-              if (Array.isArray(fsJson?.data) && fsJson.data.length > 0) {
-                const epsRows = fsJson.data.filter(r => r.type === "EPS");
-                if (epsRows.length > 0) {
-                  const lastEps = epsRows[epsRows.length - 1];
-                  latestEpsStr = `最新單季(${lastEps.date}) EPS ${Number(lastEps.value).toFixed(2)} 元`;
+              if (Array.isArray(fsJson?.data)) {
+                fsJson.data.forEach(r => {
+                  const d = r.date;
+                  if (!fsMap[d]) fsMap[d] = {};
+                  const t = String(r.type || "").trim();
+                  const v = Number(r.value);
+                  if (t === "Revenue" || t.includes("OperatingRevenue")) fsMap[d].Revenue = v;
+                  else if (t === "GrossProfit") fsMap[d].GrossProfit = v;
+                  else if (t === "OperatingIncome") fsMap[d].OperatingIncome = v;
+                  else if (t === "PreTaxIncome" || t === "IncomeBeforeTax") fsMap[d].PreTaxIncome = v;
+                  else if (t === "IncomeAfterTaxes" || t === "NetIncome" || t === "ProfitAfterTax") fsMap[d].IncomeAfterTaxes = v;
+                  else if (t === "EPS") fsMap[d].EPS = v;
+                });
+              }
+            }
+
+            if (bsRes.ok) {
+              const bsJson = await bsRes.json();
+              if (Array.isArray(bsJson?.data)) {
+                bsJson.data.forEach(r => {
+                  const d = r.date;
+                  if (!bsMap[d]) bsMap[d] = {};
+                  const t = String(r.type || "").trim();
+                  const orig = String(r.origin_name || "").trim();
+                  const v = Number(r.value);
+
+                  if (t === "Inventories" || t === "Inventory" || orig.includes("存貨")) {
+                    if (!bsMap[d].Inventory || v > bsMap[d].Inventory) bsMap[d].Inventory = v;
+                  }
+                  if (t.includes("ContractLiabilities") || orig.includes("合約負債")) {
+                    bsMap[d].ContractLiabilities = (bsMap[d].ContractLiabilities || 0) + v;
+                  }
+                });
+              }
+            }
+
+            const allDates = [...new Set([...Object.keys(fsMap), ...Object.keys(bsMap)])].sort();
+            if (allDates.length > 0) {
+              const rawQuarters = allDates.map(d => {
+                const f = fsMap[d] || {};
+                const b = bsMap[d] || {};
+                const rev = f.Revenue || 0;
+                const gp = f.GrossProfit || 0;
+                const opInc = f.OperatingIncome ?? null;
+                const preTax = f.PreTaxIncome ?? null;
+                const netInc = f.IncomeAfterTaxes ?? null;
+                const eps = f.EPS !== undefined ? Number(f.EPS) : null;
+
+                const gmPct = rev > 0 && gp !== 0 ? Number(((gp / rev) * 100).toFixed(2)) : null;
+                const opMarginPct = rev > 0 && opInc !== null ? Number(((opInc / rev) * 100).toFixed(2)) : null;
+
+                // 計算業外占比 (%) = (稅前淨利 - 營業利益) / |稅前淨利| * 100
+                let nonOpRatioPct = null;
+                if (preTax !== null && opInc !== null && Math.abs(preTax) > 0) {
+                  const nonOpIncome = preTax - opInc;
+                  nonOpRatioPct = Number(((nonOpIncome / Math.abs(preTax)) * 100).toFixed(2));
                 }
+
+                const invB = b.Inventory !== undefined ? Number((b.Inventory / 100000000).toFixed(2)) : null;
+                const contractLiabB = b.ContractLiabilities !== undefined ? Number((b.ContractLiabilities / 100000000).toFixed(2)) : null;
+
+                return {
+                  date: d,
+                  qLabel: dateToQuarterLabel(d),
+                  revB: rev > 0 ? Number((rev / 100000000).toFixed(2)) : null,
+                  netIncB: netInc !== null ? Number((netInc / 100000000).toFixed(2)) : null,
+                  eps,
+                  gmPct,
+                  opMarginPct,
+                  nonOpRatioPct,
+                  invB,
+                  contractLiabB
+                };
+              }).filter(q => q.eps !== null || q.revB !== null || q.invB !== null);
+
+              // 計算每一季的季增減 (QoQ, 與 i-1 比較) 與 年增減 (YoY, 與 i-4 比較)
+              const enrichedQuarters = rawQuarters.map((q, idx) => {
+                const prevQ = idx >= 1 ? rawQuarters[idx - 1] : null;
+                const prevYQ = idx >= 4 ? rawQuarters[idx - 4] : null;
+
+                const calcPctChange = (cur, base) => {
+                  if (cur === null || base === null || base === undefined || Math.abs(base) === 0) return null;
+                  return Number((((cur - base) / Math.abs(base)) * 100).toFixed(2));
+                };
+                const calcDiff = (cur, base) => {
+                  if (cur === null || base === null || base === undefined) return null;
+                  return Number((cur - base).toFixed(2));
+                };
+
+                return {
+                  ...q,
+                  revQoQ: calcPctChange(q.revB, prevQ?.revB),
+                  revYoY: calcPctChange(q.revB, prevYQ?.revB),
+                  epsQoQ: calcPctChange(q.eps, prevQ?.eps),
+                  epsYoY: calcPctChange(q.eps, prevYQ?.eps),
+                  // 毛利率季增減與年增減採用百分點差 (pp)
+                  gmQoQ: calcDiff(q.gmPct, prevQ?.gmPct),
+                  gmYoY: calcDiff(q.gmPct, prevYQ?.gmPct),
+                  invQoQ: calcPctChange(q.invB, prevQ?.invB),
+                  invYoY: calcPctChange(q.invB, prevYQ?.invB),
+                  clQoQ: calcPctChange(q.contractLiabB, prevQ?.contractLiabB),
+                  clYoY: calcPctChange(q.contractLiabB, prevYQ?.contractLiabB)
+                };
+              });
+
+              // 取最近 8 季 (兩年)，由新到舊排序
+              parsedQuarterlyList = enrichedQuarters.slice(-8).reverse();
+
+              if (parsedQuarterlyList.length > 0) {
+                const latestQ = parsedQuarterlyList[0];
+                epsNote = `最新季(${latestQ.qLabel}) EPS ${latestQ.eps !== null ? latestQ.eps.toFixed(2) + "元" : "-"} (季增減 ${fmtSignNum(latestQ.epsQoQ, 1)} / 年增減 ${fmtSignNum(latestQ.epsYoY, 1)})｜毛利率 ${latestQ.gmPct !== null ? latestQ.gmPct.toFixed(2) + "%" : "-"}｜業外占比 ${latestQ.nonOpRatioPct !== null ? latestQ.nonOpRatioPct.toFixed(1) + "%" : "-"}`;
+
+                const invStr = latestQ.invB !== null
+                  ? `存貨(庫存) ${latestQ.invB}億 (季增減 ${fmtSignNum(latestQ.invQoQ, 1)} / 年增減 ${fmtSignNum(latestQ.invYoY, 1)})`
+                  : "存貨無公開資料";
+                const clStr = latestQ.contractLiabB !== null
+                  ? `合約負債 ${latestQ.contractLiabB}億 (季增減 ${fmtSignNum(latestQ.clQoQ, 1)} / 年增減 ${fmtSignNum(latestQ.clYoY, 1)})`
+                  : "合約負債無公開明細";
+                balanceNote = `${latestQ.qLabel} 資產負債指標：${invStr} ｜ ${clStr}`;
               }
             }
           } catch (e) {}
 
-          try {
-            const perUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(cleanCode)}&start_date=${startDShort}`;
-            const perRes = await fetch(perUrl);
-            if (perRes.ok) {
-              const perJson = await perRes.json();
-              if (Array.isArray(perJson?.data) && perJson.data.length > 0) {
-                const lastPer = perJson.data[perJson.data.length - 1];
-                latestPeStr = `本益比(PE) ${lastPer.PER || "-"} 倍｜股價淨值比(PBR) ${lastPer.PBR || "-"}｜殖利率 ${lastPer.dividend_yield || "-"}%`;
-              }
-            }
-          } catch (e) {}
-
-          if (latestEpsStr || latestPeStr) {
-            epsNote = [latestEpsStr, latestPeStr].filter(Boolean).join(" ｜ ");
-          }
+          finDetails = {
+            monthlyRevenues: parsedMonthlyList,
+            quarterlyStats: parsedQuarterlyList,
+            isETF: false
+          };
         }
 
         // 7. 抓取 Google News 最新新聞
@@ -941,31 +1140,33 @@
           branchNote: isUserCustomBranch ? stockItem.branchNote : autoBranchNote,
           revenueNote: revenueNote || "尚無當月營收更新資料",
           epsNote: epsNote || "尚無最新單季財報 EPS 資料",
+          balanceNote: balanceNote || "尚無存貨與合約負債明細",
+          financialDetails: finDetails,
           newsItems: newsList,
           fundamentalNote: isETF
             ? (ETF_FUNDAMENTAL_DB[cleanCode]?.peText || `已完成 ${cleanCode} ${finalName} 淨值與均線位階同步。`)
-            : `已同步 ${cleanCode} ${finalName} 最新收盤 ${finalClose} 元與月營收/財報表現，請嚴格遵守設定之停損條件，拒絕基本面凹單。`,
+            : `已同步 ${cleanCode} ${finalName} 近一年月營收、近兩年季財報 EPS、毛利率/業外占比、庫存與合約負債。`,
           lastSyncedAt: `${nowTimeStr} 同步完成`,
-          syncSource: sourceLabel || "TWSE/FinMind 綜合資料庫"
+          syncSource: sourceLabel || "TWSE/FinMind 財報資料庫"
         };
       };
 
       const handleSyncSingleStock = async (stockItem, e) => {
         if (e) e.stopPropagation();
         setFetchingIds(prev => ({ ...prev, [stockItem.id]: true }));
-        setSyncBannerMsg(`⏳ 正在聯網抓取【${stockItem.code} ${stockItem.name || ""}】最新收盤價、5/10/20/60MA、月營收、EPS 與新聞...`);
+        setSyncBannerMsg(`⏳ 正在聯網抓取【${stockItem.code} ${stockItem.name || ""}】近1年月營收、近2年季財報、毛利率/業外占比、庫存與合約負債...`);
 
         const updated = await fetchSingleStockMarketData(stockItem);
         setStocks(prev => prev.map(s => (s.id === stockItem.id ? updated : s)));
         setFetchingIds(prev => ({ ...prev, [stockItem.id]: false }));
-        setSyncBannerMsg(`✅ 【${updated.code} ${updated.name}】更新完成！最新收盤：${updated.todayClose} 元`);
+        setSyncBannerMsg(`✅ 【${updated.code} ${updated.name}】股價與四大深度財報更新完成！`);
       };
 
       const handleSyncAllStocks = async () => {
         const targetList = activeAccountId === "ALL" ? stocks : stocks.filter(s => s.accountId === activeAccountId);
         if (isSyncingAll || targetList.length === 0) return;
         setIsSyncingAll(true);
-        setSyncBannerMsg(`⏳ 正在批量抓取目前檢視之 (${targetList.length} 檔) 最新 K 線均線、法人籌碼、月營收、EPS 與新聞...`);
+        setSyncBannerMsg(`⏳ 正在批量抓取目前檢視之 (${targetList.length} 檔) 最新股價均線、近1年月營收、近2年季報、毛利率、庫存與合約負債...`);
 
         const updatedMap = {};
         for (const item of targetList) {
@@ -976,7 +1177,7 @@
         }
         setStocks(prev => prev.map(s => updatedMap[s.id] || s));
         setIsSyncingAll(false);
-        setSyncBannerMsg(`✅ (${targetList.length} 檔) 股價、均線、月營收、EPS 與新聞已全數同步完畢！`);
+        setSyncBannerMsg(`✅ (${targetList.length} 檔) 股價、均線与四大深度財報已全數同步完畢！`);
       };
 
       const handleAddStockSubmit = async (e) => {
@@ -1020,11 +1221,11 @@
         }));
 
         setFetchingIds(prev => ({ ...prev, [newId]: true }));
-        setSyncBannerMsg(`⏳ 已新增【${cleanCode} ${matchedName}】至「${getAccountName(targetAccId)}」，正在自動抓取收盤價、均線、月營收、EPS 與新聞...`);
+        setSyncBannerMsg(`⏳ 已新增【${cleanCode} ${matchedName}】，正在自動抓取收盤價、近1年月營收、近2年季報、毛利率、庫存與合約負債...`);
         const syncedStock = await fetchSingleStockMarketData(draftStock);
         setStocks(prev => prev.map(s => (s.id === newId ? syncedStock : s)));
         setFetchingIds(prev => ({ ...prev, [newId]: false }));
-        setSyncBannerMsg(`✅ 【${syncedStock.code} ${syncedStock.name}】自動抓取完成！最新收盤：${syncedStock.todayClose} 元`);
+        setSyncBannerMsg(`✅ 【${syncedStock.code} ${syncedStock.name}】全套深度財報與行情抓取完成！`);
       };
 
       const handleDeleteStock = (id, code, name, e) => {
@@ -1042,7 +1243,7 @@
       };
 
       // ============================================================================
-      // 🧮 風控與紀律演算法 (完整回傳所有 Score 與防呆數值，徹底杜絕黑畫面)
+      // 🧮 風控與紀律演算法
       // ============================================================================
       const evaluatedStocks = useMemo(() => {
         return stocks.map((rawItem, idx) => {
@@ -1176,7 +1377,6 @@
             actionReason = `籌碼敗壞一票否決：出現融資暴增+法人大賣或隔日沖鎖漲停，隔日早盤強制逢高減碼避險！`;
           }
 
-          // 四維度量化評分 (確保全部皆為合法 Number)
           let chipScore = 0;
           if (s.chipForeignTrustBuy) chipScore += 2.0;
           if (s.chipMarginDownShortUp) chipScore += 1.0;
@@ -1325,7 +1525,7 @@
         setStocks(parsedList);
         setSelectedStockId(parsedList[0].id);
         setSnapshotInput("");
-        setSyncBannerMsg(`✅ 已成功還原 ${parsedList.length} 檔庫存與帳號分類，正在自動聯網同步最新收盤價、均線、營收與新聞...`);
+        setSyncBannerMsg(`✅ 已成功還原 ${parsedList.length} 檔庫存與帳號分類，正在自動聯網同步最新收盤價與四大財報...`);
 
         setIsSyncingAll(true);
         const syncedList = [];
@@ -1335,7 +1535,7 @@
         }
         setStocks(syncedList);
         setIsSyncingAll(false);
-        setSyncBannerMsg(`✅ 記憶碼還原並完成 ${syncedList.length} 檔最新盤後行情與基本面同步！`);
+        setSyncBannerMsg(`✅ 記憶碼還原並完成 ${syncedList.length} 檔最新盤後行情與四大深度財報同步！`);
       };
 
       const updateSelectedStockField = (field, value) => {
@@ -1361,11 +1561,11 @@
   * **資券與借券**：${s.marginNote}
   * **主力/分點**：${s.branchNote}
 - **📈 技術面結構**：今日收盤 ${fmtNum(s.todayClose)} 元 | 5MA: ${fmtNum(s.ma5)} | 10MA: ${fmtNum(s.ma10)} | 20MA(月線): ${fmtNum(s.ma20)} | 60MA(季線): ${fmtNum(s.ma60)}
-- **📰 基本面、財報與消息解讀**：
-  * **每月營收**：${s.revenueNote}
-  * **財報與估值**：${s.epsNote}
-  * **題材與紀律解讀**：${s.fundamentalNote}
-  * **最新相關新聞**：\n${newsMd || "    - 尚無新聞"}
+- **📰 基本面、財報四大維度與消息解讀**：
+  * **① 近一年每月營收**：${s.revenueNote}
+  * **② 近兩年季財報與毛利率/業外占比**：${s.epsNote}
+  * **③ 庫存(存貨)與合約負債**：${s.balanceNote}
+  * **④ 最新相關新聞**：\n${newsMd || "    - 尚無新聞"}
 
 #### ⚡ 【${s.code} ${s.name}】冷酷風控官的明日操作劇本
 - **🧠 紀律當頭棒喝**：${s.actionReason}
@@ -1390,6 +1590,7 @@ ${diagSections}
       }, [filteredStocks, activeAccountId, accounts, stateSnapshotCode]);
 
       const getPnLColor = (val) => {
+        if (val === null || val === undefined || !Number.isFinite(Number(val))) return "text-slate-400";
         if (val > 0) return colorStyle === "tw" ? "text-rose-400" : "text-emerald-400";
         if (val < 0) return colorStyle === "tw" ? "text-emerald-400" : "text-rose-400";
         return "text-slate-300";
@@ -1414,6 +1615,11 @@ ${diagSections}
         setTimeout(() => setCopiedType(null), 2000);
       };
 
+      // 取得目前選中股票之財報明細陣列
+      const selMonthlyList = selectedStock?.financialDetails?.monthlyRevenues || [];
+      const selQuarterlyList = selectedStock?.financialDetails?.quarterlyStats || [];
+      const isSelectedETF = Boolean(selectedStock?.code?.startsWith("00"));
+
       return (
         <div className="max-w-[1440px] mx-auto p-3 md:p-6 space-y-5">
           {/* 頂部 Header */}
@@ -1422,14 +1628,14 @@ ${diagSections}
               <div>
                 <div className="flex flex-wrap items-center gap-2.5">
                   <span className="px-2.5 py-1 bg-rose-500/15 border border-rose-500/40 text-rose-400 rounded-md text-xs font-black tracking-wider">
-                    IRON DISCIPLINE v3.6 PRO
+                    IRON DISCIPLINE v3.7 PRO
                   </span>
                   <h1 className="text-xl md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-amber-200 to-emerald-400">
-                    華爾街量化風控官 × Google 雲端同步旗艦版
+                    華爾街量化風控官 × 財報深度透視雲端旗艦版
                   </h1>
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  全功能終極修復版：支援 Google Sheets 跨裝置雲端同步、多帳號分類損益、月營收/季EPS/新聞自動抓取、四維度診斷與三劇本。
+                  全自動聯網精算：近1年月營收(YoY/MoM)、近2年季財報(QoQ/YoY)、毛利率與業外占比、存貨(庫存)與合約負債領先指標。
                 </p>
               </div>
 
@@ -1468,7 +1674,7 @@ ${diagSections}
                   disabled={isSyncingAll}
                   className="px-3.5 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 rounded-lg text-xs font-bold text-blue-200 transition disabled:opacity-50"
                 >
-                  {isSyncingAll ? "🔄 雲端同步中..." : "🔄 一鍵抓取盤後/財報/新聞"}
+                  {isSyncingAll ? "🔄 深度財報同步中..." : "🔄 一鍵抓取盤後/四大財報/新聞"}
                 </button>
 
                 <button
@@ -1529,7 +1735,6 @@ ${diagSections}
                   </button>
                 </div>
 
-                {/* 右側輔助切換 */}
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setActiveTab(prev => (prev === "dashboard" ? "markdown" : "dashboard"))}
@@ -1550,7 +1755,7 @@ ${diagSections}
               {isAccountManagerOpen && (
                 <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 text-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-                    <span className="font-bold text-amber-300">⚙️ 簡易帳號與分類管理（可依不同券商、操作策略或家人帳戶分開管理）</span>
+                    <span className="font-bold text-amber-300">⚙️ 簡易帳號與分類管理</span>
                     <form onSubmit={handleCreateAccount} className="flex items-center gap-2">
                       <input
                         type="text"
@@ -1662,7 +1867,7 @@ ${diagSections}
             <section className="bg-slate-900 border-2 border-purple-500/40 rounded-2xl p-5 shadow-2xl space-y-3 text-xs">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
                 <h3 className="text-sm font-bold text-purple-300">
-                  ⚖️ 系統強制指令（停損 / 停利 / 續抱）觸發條件完整說明
+                  ⚖️ 系統強制指令與四大財報指標說明
                 </h3>
                 <button onClick={() => setIsRuleExplainOpen(false)} className="text-slate-400 hover:text-white">✕ 關閉說明</button>
               </div>
@@ -1677,18 +1882,18 @@ ${diagSections}
                 </div>
 
                 <div className="p-3.5 bg-slate-950/90 border border-amber-500/30 rounded-xl space-y-1.5">
-                  <div className="font-bold text-amber-300">2. 【💰 減碼停利 / 保本停利】</div>
+                  <div className="font-bold text-amber-300">2. 毛利率與「業外占比」怎麼看？</div>
                   <ul className="list-disc pl-4 space-y-1">
-                    <li><b>動態移動停利</b>：當期間最高價曾獲利達 <b>+15% 以上</b> 自動激活；之後若收盤價從最高價回落達 <b>5%</b>，立即觸發停利。</li>
-                    <li><b>保本線保護</b>：若期間最高曾獲利達 <b>+8% ~ +14.9%</b>，防守底線自動上移至「買入成本 + 1%」，跌破即觸發保本出場。</li>
+                    <li><b>毛利率季增/年增 (pp)</b>：代表產品競爭力與定價權，毛利率雙增為多頭核心引擎。</li>
+                    <li><b>業外占比 (%)</b>：公式為 `(稅前淨利 - 營業利益) / |稅前淨利|`。若業外占比過高（如 &gt;30%），代表當季 EPS 靠匯兌或處分資產美化，須提防隔季獲利回落！</li>
                   </ul>
                 </div>
 
                 <div className="p-3.5 bg-slate-950/90 border border-emerald-500/30 rounded-xl space-y-1.5">
-                  <div className="font-bold text-emerald-400">3. Google Sheets 跨裝置雲端同步</div>
+                  <div className="font-bold text-emerald-400">3. 存貨(庫存)與「合約負債」怎麼看？</div>
                   <ul className="list-disc pl-4 space-y-1">
-                    <li>電腦編輯完庫存後，點擊下方雲端同步中心的 <b>「⬆️ 上傳至雲端」</b>。</li>
-                    <li>手機打開網頁點擊 <b>「⬇️ 從雲端下載」</b>，即可 100% 同步所有帳號與持股明細！</li>
+                    <li><b>合約負債 (Contract Liabilities)</b>：即客戶預付訂金。對於半導體設備、伺服器、營建與客製化廠，<b>合約負債季增/年增代表在手訂單滿載，為營收爆發的領先指標！</b></li>
+                    <li><b>存貨 (Inventory)</b>：搭配營收同步成長為健康備貨；若營收衰退但存貨暴增則須提防跌價損失。</li>
                   </ul>
                 </div>
               </div>
@@ -1708,7 +1913,7 @@ ${diagSections}
             <form onSubmit={handleAddStockSubmit} className="bg-slate-900 border-2 border-emerald-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
-                  <span>➕</span> KEY 入庫存部位（選擇歸屬帳號，輸入代號、張數與均價自動聯網抓取全套數據）
+                  <span>➕</span> KEY 入庫存部位（選擇歸屬帳號，自動抓取股價、近1年月營收、近2年季財報、毛利率、庫存與合約負債）
                 </h3>
                 <button type="button" onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white text-sm">✕ 關閉</button>
               </div>
@@ -1732,7 +1937,7 @@ ${diagSections}
                   <input
                     required
                     type="text"
-                    placeholder="如: 2330, 009816"
+                    placeholder="如: 2330, 8027"
                     value={newForm.code}
                     onChange={e => {
                       const codeVal = e.target.value.trim().toUpperCase();
@@ -1863,7 +2068,7 @@ ${diagSections}
                     </span>
                   </h2>
                   <span className="text-xs text-amber-300/90">
-                    💡 點選任一列可切換下方「四維度深度診斷」与「明日三劇本」；停損選「純看%數」則絕不因破均線而誤觸停損
+                    💡 點選任一列可切換下方「四維度深度診斷」與「📊 財報四大深度透視表 (月營收/季報/毛利率/庫存與合約負債)」
                   </span>
                 </div>
 
@@ -1991,9 +2196,9 @@ ${diagSections}
                                   onClick={e => handleSyncSingleStock(s, e)}
                                   disabled={isSyncingThis}
                                   className="px-2 py-1 bg-blue-950/70 hover:bg-blue-900 border border-blue-500/40 text-blue-300 rounded text-xs font-semibold transition"
-                                  title="聯網自動抓取最新價格、均線、營收、EPS與新聞"
+                                  title="聯網自動抓取最新價格、近1年月營收、近2年季報、毛利率與庫存合約負債"
                                 >
-                                  {isSyncingThis ? "⏳" : "🔄 抓價"}
+                                  {isSyncingThis ? "⏳" : "🔄 抓價/財報"}
                                 </button>
                                 <button
                                   onClick={() => {
@@ -2196,12 +2401,16 @@ ${diagSections}
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={e => handleSyncSingleStock(selectedStock, e)}
+                        disabled={Boolean(fetchingIds[selectedStock.id])}
+                        className="px-3 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-full text-xs font-bold text-blue-200 transition"
+                      >
+                        {fetchingIds[selectedStock.id] ? "⏳ 抓取財報中..." : "🔄 刷新此股財報與行情"}
+                      </button>
                       <div className="text-xs font-semibold px-3.5 py-1.5 bg-slate-950 border border-slate-700 rounded-full">
                         多空總評分：
                         <span className="text-amber-400 text-sm font-black">{fmtNum(selectedStock.totalScore, 1)}</span> / 10 分
-                        <span className="text-slate-400 ml-1.5 text-[11px]">
-                          (籌碼{fmtNum(selectedStock.chipScore, 1)} + 技術{fmtNum(selectedStock.techScore, 1)} + 基本{fmtNum(selectedStock.fundScore, 1)} + 族群{fmtNum(selectedStock.sectorScore, 1)})
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -2267,26 +2476,26 @@ ${diagSections}
                       </div>
                     </div>
 
-                    {/* 3. 基本面、月營收、EPS 與即時新聞 */}
+                    {/* 3. 基本面、財報摘要與即時新聞 */}
                     <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2.5">
                       <div className="flex items-center justify-between font-bold text-slate-200 border-b border-slate-800 pb-2">
-                        <span>📰 基本面、財報與新聞 (權重 3分)</span>
+                        <span>📰 基本面、財報摘要與新聞 (權重 3分)</span>
                         <span className="text-amber-400 font-mono">
                           {fmtNum(selectedStock.fundScore + selectedStock.sectorScore, 1)} / 3.0
                         </span>
                       </div>
                       <div className="space-y-1.5 text-slate-300 leading-relaxed">
                         <div>
-                          <span className="text-amber-300 font-semibold">• 每月營收：</span>
+                          <span className="text-amber-300 font-semibold">• 最新營收：</span>
                           <span>{selectedStock.revenueNote}</span>
                         </div>
                         <div>
-                          <span className="text-emerald-300 font-semibold">• 財報與估值：</span>
+                          <span className="text-emerald-300 font-semibold">• 季報與毛利：</span>
                           <span>{selectedStock.epsNote}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 font-semibold">• 題材解讀：</span>
-                          <span>{selectedStock.fundamentalNote}</span>
+                          <span className="text-purple-300 font-semibold">• 庫存與合約負債：</span>
+                          <span>{selectedStock.balanceNote}</span>
                         </div>
 
                         <div className="pt-2 border-t border-slate-800/80 space-y-1">
@@ -2306,6 +2515,320 @@ ${diagSections}
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* ============================================================================ */}
+                  {/* 📊 新增：個股財報四大深度透視面板 (1.近一年營收 2.近兩年季報 3.毛利率與業外占比 4.庫存與合約負債) */}
+                  {/* ============================================================================ */}
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📊</span>
+                        <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-emerald-300">
+                          財報四大深度透視面板 — 【{selectedStock.code} {selectedStock.name}】
+                        </h3>
+                      </div>
+
+                      {/* 財報子分頁切換按鈕 */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <button
+                          onClick={() => setFinSubTab("all")}
+                          className={`px-3 py-1 rounded-lg font-bold transition ${finSubTab === "all" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-300 border border-slate-800"}`}
+                        >
+                          全部展開
+                        </button>
+                        <button
+                          onClick={() => setFinSubTab("revenue")}
+                          className={`px-3 py-1 rounded-lg font-bold transition ${finSubTab === "revenue" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-300 border border-slate-800"}`}
+                        >
+                          ① 近一年月營收 (YoY/MoM)
+                        </button>
+                        <button
+                          onClick={() => setFinSubTab("quarterly")}
+                          className={`px-3 py-1 rounded-lg font-bold transition ${finSubTab === "quarterly" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-300 border border-slate-800"}`}
+                        >
+                          ② 近兩年季財報 (EPS/營收)
+                        </button>
+                        <button
+                          onClick={() => setFinSubTab("margin")}
+                          className={`px-3 py-1 rounded-lg font-bold transition ${finSubTab === "margin" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-300 border border-slate-800"}`}
+                        >
+                          ③ 毛利率與業外占比
+                        </button>
+                        <button
+                          onClick={() => setFinSubTab("balance")}
+                          className={`px-3 py-1 rounded-lg font-bold transition ${finSubTab === "balance" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-300 border border-slate-800"}`}
+                        >
+                          ④ 庫存(存貨)與合約負債
+                        </button>
+                      </div>
+                    </div>
+
+                    {isSelectedETF ? (
+                      <div className="p-4 bg-slate-950/90 border border-slate-800 rounded-xl text-xs text-slate-300">
+                        💡 <b>【{selectedStock.code} {selectedStock.name}】為 ETF 指數股票型基金</b>，不適用單一上市櫃公司之「月營收、季毛利率、業外占比、製造業存貨與合約負債」財報科目。請切換點選一般個股（如 `2330`、`6213`、`5443` 等）並點擊「🔄 抓價/財報」即可查看完整四大財報表格！
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                        {/* 區塊 ①：近一年每月營收追蹤表 (12個月 + 最新營收年增減/月增減分析) */}
+                        {(finSubTab === "all" || finSubTab === "revenue") && (
+                          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                              <span className="font-bold text-amber-300">① 近一年每月營收追蹤 (12個月明細與 YoY/MoM)</span>
+                              <span className="text-[11px] text-slate-400">單位：億元新台幣</span>
+                            </div>
+
+                            {selMonthlyList.length > 0 ? (
+                              <>
+                                {/* 最新單月營收亮點分析卡 */}
+                                <div className="p-2.5 bg-slate-900 border border-amber-500/30 rounded-lg text-[11px] text-slate-200 flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <span className="text-amber-300 font-bold">最新一期 ({selMonthlyList[0].ym})：</span>
+                                    單月營收 <b className="font-mono text-white">{selMonthlyList[0].revB} 億</b>
+                                  </div>
+                                  <div className="flex items-center gap-3 font-mono">
+                                    <span>年增減(YoY): <b className={getPnLColor(selMonthlyList[0].yoy)}>{fmtSignNum(selMonthlyList[0].yoy, 2)}</b></span>
+                                    <span>月增減(MoM): <b className={getPnLColor(selMonthlyList[0].mom)}>{fmtSignNum(selMonthlyList[0].mom, 2)}</b></span>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto max-h-64">
+                                  <table className="w-full text-left text-[11px] font-mono">
+                                    <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                                      <tr>
+                                        <th className="p-2">年月</th>
+                                        <th className="p-2 text-right">單月營收(億)</th>
+                                        <th className="p-2 text-right">年增減 (YoY)</th>
+                                        <th className="p-2 text-right">月增減 (MoM)</th>
+                                        <th className="p-2 text-center font-sans">動能判讀</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70">
+                                      {selMonthlyList.map((m, idx) => (
+                                        <tr key={idx} className={idx === 0 ? "bg-amber-950/20 font-bold" : ""}>
+                                          <td className="p-2 text-slate-200">{m.ym} {idx === 0 && <span className="text-[9px] px-1 bg-amber-500 text-slate-950 rounded font-sans">最新</span>}</td>
+                                          <td className="p-2 text-right text-white">{m.revB.toFixed(2)}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(m.yoy)}`}>{fmtSignNum(m.yoy, 2)}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(m.mom)}`}>{fmtSignNum(m.mom, 2)}</td>
+                                          <td className="p-2 text-center font-sans">
+                                            {m.yoy > 0 && m.mom > 0 ? (
+                                              <span className="text-rose-400">🔥 年月雙增</span>
+                                            ) : m.yoy > 0 ? (
+                                              <span className="text-amber-300">📈 年增</span>
+                                            ) : m.mom > 0 ? (
+                                              <span className="text-blue-300">↗️ 月增</span>
+                                            ) : (
+                                              <span className="text-emerald-400">📉 雙減</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-6 text-center text-slate-500">
+                                尚未載入近一年月營收明細，請點擊該股右側的 <b>「🔄 抓價/財報」</b> 按鈕立即聯網抓取！
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 區塊 ②：近兩年季財報追蹤表 (8季 EPS 與季營收 QoQ / YoY) */}
+                        {(finSubTab === "all" || finSubTab === "quarterly") && (
+                          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                              <span className="font-bold text-emerald-300">② 近兩年季財報追蹤 (近8季 EPS 與營收季增減/年增減)</span>
+                              <span className="text-[11px] text-slate-400">QoQ=季增減｜YoY=年增減</span>
+                            </div>
+
+                            {selQuarterlyList.length > 0 ? (
+                              <>
+                                <div className="p-2.5 bg-slate-900 border border-emerald-500/30 rounded-lg text-[11px] text-slate-200 flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <span className="text-emerald-300 font-bold">最新季報 ({selQuarterlyList[0].qLabel})：</span>
+                                    單季 EPS <b className="font-mono text-white">{selQuarterlyList[0].eps !== null ? selQuarterlyList[0].eps.toFixed(2) : "-"} 元</b>
+                                  </div>
+                                  <div className="flex items-center gap-3 font-mono">
+                                    <span>EPS季增減(QoQ): <b className={getPnLColor(selQuarterlyList[0].epsQoQ)}>{fmtSignNum(selQuarterlyList[0].epsQoQ, 1)}</b></span>
+                                    <span>EPS年增減(YoY): <b className={getPnLColor(selQuarterlyList[0].epsYoY)}>{fmtSignNum(selQuarterlyList[0].epsYoY, 1)}</b></span>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto max-h-64">
+                                  <table className="w-full text-left text-[11px] font-mono">
+                                    <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                                      <tr>
+                                        <th className="p-2">季度</th>
+                                        <th className="p-2 text-right">單季EPS(元)</th>
+                                        <th className="p-2 text-right">EPS季增(QoQ)</th>
+                                        <th className="p-2 text-right">EPS年增(YoY)</th>
+                                        <th className="p-2 text-right">季營收(億)</th>
+                                        <th className="p-2 text-right">營收年增(YoY)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70">
+                                      {selQuarterlyList.map((q, idx) => (
+                                        <tr key={idx} className={idx === 0 ? "bg-emerald-950/20 font-bold" : ""}>
+                                          <td className="p-2 text-slate-200">{q.qLabel}</td>
+                                          <td className="p-2 text-right text-white">{q.eps !== null ? q.eps.toFixed(2) : "-"}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.epsQoQ)}`}>{fmtSignNum(q.epsQoQ, 1)}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.epsYoY)}`}>{fmtSignNum(q.epsYoY, 1)}</td>
+                                          <td className="p-2 text-right text-slate-300">{q.revB !== null ? q.revB.toFixed(1) : "-"}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.revYoY)}`}>{fmtSignNum(q.revYoY, 1)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-6 text-center text-slate-500">
+                                尚未載入近兩年季財報明細，請點擊該股右側的 <b>「🔄 抓價/財報」</b> 按鈕立即聯網抓取！
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 區塊 ③：毛利率 (季增減/年增減) 與 業外占比分析 */}
+                        {(finSubTab === "all" || finSubTab === "margin") && (
+                          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                              <span className="font-bold text-rose-300">③ 毛利率 (年增減 / 季增減) 與 業外損益占比分析</span>
+                              <span className="text-[11px] text-slate-400">pp = 百分點差</span>
+                            </div>
+
+                            {selQuarterlyList.length > 0 ? (
+                              <>
+                                <div className="p-2.5 bg-slate-900 border border-rose-500/30 rounded-lg text-[11px] text-slate-200 flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <span className="text-rose-300 font-bold">最新毛利率 ({selQuarterlyList[0].qLabel})：</span>
+                                    <b className="font-mono text-white">{selQuarterlyList[0].gmPct !== null ? selQuarterlyList[0].gmPct.toFixed(2) + "%" : "-"}</b>
+                                    <span className="ml-2 text-slate-400">
+                                      (季增減 <b className={getPnLColor(selQuarterlyList[0].gmQoQ)}>{fmtSignNum(selQuarterlyList[0].gmQoQ, 2, "pp")}</b> / 年增減 <b className={getPnLColor(selQuarterlyList[0].gmYoY)}>{fmtSignNum(selQuarterlyList[0].gmYoY, 2, "pp")}</b>)
+                                    </span>
+                                  </div>
+                                  <div>
+                                    業外占稅前淨利比：<b className="font-mono text-amber-300">{selQuarterlyList[0].nonOpRatioPct !== null ? selQuarterlyList[0].nonOpRatioPct.toFixed(1) + "%" : "-"}</b>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto max-h-64">
+                                  <table className="w-full text-left text-[11px] font-mono">
+                                    <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                                      <tr>
+                                        <th className="p-2">季度</th>
+                                        <th className="p-2 text-right">毛利率(%)</th>
+                                        <th className="p-2 text-right">季增減(QoQ)</th>
+                                        <th className="p-2 text-right">年增減(YoY)</th>
+                                        <th className="p-2 text-right">營益率(%)</th>
+                                        <th className="p-2 text-right">業外占比(%)</th>
+                                        <th className="p-2 text-center font-sans">獲利品質判讀</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70">
+                                      {selQuarterlyList.map((q, idx) => {
+                                        const isHighNonOp = q.nonOpRatioPct !== null && Math.abs(q.nonOpRatioPct) > 25;
+                                        return (
+                                          <tr key={idx} className={idx === 0 ? "bg-rose-950/20 font-bold" : ""}>
+                                            <td className="p-2 text-slate-200">{q.qLabel}</td>
+                                            <td className="p-2 text-right text-white">{q.gmPct !== null ? `${q.gmPct.toFixed(2)}%` : "-"}</td>
+                                            <td className={`p-2 text-right ${getPnLColor(q.gmQoQ)}`}>{fmtSignNum(q.gmQoQ, 2, "pp")}</td>
+                                            <td className={`p-2 text-right ${getPnLColor(q.gmYoY)}`}>{fmtSignNum(q.gmYoY, 2, "pp")}</td>
+                                            <td className="p-2 text-right text-slate-300">{q.opMarginPct !== null ? `${q.opMarginPct.toFixed(2)}%` : "-"}</td>
+                                            <td className={`p-2 text-right ${isHighNonOp ? "text-amber-300 font-bold" : "text-slate-200"}`}>
+                                              {q.nonOpRatioPct !== null ? `${q.nonOpRatioPct.toFixed(1)}%` : "-"}
+                                            </td>
+                                            <td className="p-2 text-center font-sans">
+                                              {q.nonOpRatioPct === null ? (
+                                                "-"
+                                              ) : Math.abs(q.nonOpRatioPct) <= 15 ? (
+                                                <span className="text-emerald-400">✅ 本業純度高</span>
+                                              ) : q.nonOpRatioPct > 25 ? (
+                                                <span className="text-amber-300">⚠️ 業外挹注高</span>
+                                              ) : q.nonOpRatioPct < -20 ? (
+                                                <span className="text-rose-400">🚨 業外拖累</span>
+                                              ) : (
+                                                <span className="text-slate-300">正常區間</span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-6 text-center text-slate-500">
+                                尚未載入毛利率與業外占比明細，請點擊該股右側的 <b>「🔄 抓價/財報」</b> 按鈕立即聯網抓取！
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 區塊 ④：庫存 (存貨 Inventory) 與 合約負債 (Contract Liabilities) 追蹤表 */}
+                        {(finSubTab === "all" || finSubTab === "balance") && (
+                          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                              <span className="font-bold text-purple-300">④ 庫存 (存貨) 與 合約負債 (在手訂單領先指標)</span>
+                              <span className="text-[11px] text-slate-400">單位：億元新台幣</span>
+                            </div>
+
+                            {selQuarterlyList.length > 0 ? (
+                              <>
+                                <div className="p-2.5 bg-slate-900 border border-purple-500/30 rounded-lg text-[11px] text-slate-200 flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <span className="text-purple-300 font-bold">最新存貨 ({selQuarterlyList[0].qLabel})：</span>
+                                    <b className="font-mono text-white">{selQuarterlyList[0].invB !== null ? `${selQuarterlyList[0].invB} 億` : "無"}</b>
+                                    <span className="ml-1 text-slate-400">(季增減 {fmtSignNum(selQuarterlyList[0].invQoQ, 1)})</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-amber-300 font-bold">最新合約負債：</span>
+                                    <b className="font-mono text-white">{selQuarterlyList[0].contractLiabB !== null ? `${selQuarterlyList[0].contractLiabB} 億` : "無"}</b>
+                                    <span className="ml-1 text-slate-400">(季增減 <b className={getPnLColor(selQuarterlyList[0].clQoQ)}>{fmtSignNum(selQuarterlyList[0].clQoQ, 1)}</b>)</span>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto max-h-64">
+                                  <table className="w-full text-left text-[11px] font-mono">
+                                    <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                                      <tr>
+                                        <th className="p-2">季度</th>
+                                        <th className="p-2 text-right">存貨/庫存(億)</th>
+                                        <th className="p-2 text-right">庫存季增(QoQ)</th>
+                                        <th className="p-2 text-right">庫存年增(YoY)</th>
+                                        <th className="p-2 text-right">合約負債(億)</th>
+                                        <th className="p-2 text-right">合約負債季增</th>
+                                        <th className="p-2 text-right">合約負債年增</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/70">
+                                      {selQuarterlyList.map((q, idx) => (
+                                        <tr key={idx} className={idx === 0 ? "bg-purple-950/20 font-bold" : ""}>
+                                          <td className="p-2 text-slate-200">{q.qLabel}</td>
+                                          <td className="p-2 text-right text-white">{q.invB !== null ? q.invB.toFixed(2) : "-"}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.invQoQ)}`}>{fmtSignNum(q.invQoQ, 1)}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.invYoY)}`}>{fmtSignNum(q.invYoY, 1)}</td>
+                                          <td className="p-2 text-right text-amber-300">{q.contractLiabB !== null ? q.contractLiabB.toFixed(2) : "-"}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.clQoQ)}`}>{fmtSignNum(q.clQoQ, 1)}</td>
+                                          <td className={`p-2 text-right ${getPnLColor(q.clYoY)}`}>{fmtSignNum(q.clYoY, 1)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-6 text-center text-slate-500">
+                                尚未載入存貨(庫存)與合約負債明細，請點擊該股右側的 <b>「🔄 抓價/財報」</b> 按鈕立即聯網抓取！
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </section>
               )}
@@ -2372,7 +2895,7 @@ ${diagSections}
                 <div className="space-y-3">
                   <p className="text-xs text-slate-400 leading-relaxed">
                     1. 您的 <b>Google Apps Script 網頁應用程式網址</b> 會自動保存在瀏覽器中，不需重複輸入。<br/>
-                    2. 電腦端修改完庫存後點擊 <b>「⬆️ 上傳至雲端」</b>；手機端打開網頁點擊 <b>「⬇️ 從雲端下載」</b> 即可瞬間同步所有帳號分類與庫存明細！
+                    2. 電腦端修改完庫存後點擊 <b>「⬆️ 上傳至雲端」</b>；手機端打開網頁點擊 <b>「⬇️ 從雲端下載」</b> 即可瞬間同步所有帳號分類、庫存明細與四大財報數據！
                   </p>
 
                   <input
